@@ -8,9 +8,20 @@
 #include <cstring>
 #include <utility>
 #include <print>
+#include <filesystem>
+#include <fstream>
+#include <vector>
 
 namespace graphics::core
 {
+
+namespace utils
+{
+
+
+} // namespace graphics::core::utils
+
+
 
 class Buffer final
 {
@@ -81,11 +92,89 @@ public:
     }
 
 private:
-    void destroy() {
+    void destroy()
+    {
         if (buffer != VK_NULL_HANDLE)
         {
             vmaDestroyBuffer(graphics::internal::context.allocator, buffer, allocation);
             buffer = VK_NULL_HANDLE;
+        }
+    }
+};
+
+class Shader final
+{
+public:
+    VkShaderModule shader;
+
+    Shader() = default;
+    Shader(std::filesystem::path file_path)
+        : shader(load_shader_module(file_path)) {}
+
+    ~Shader() { destroy(); };
+
+    Shader(const Shader&) = delete;
+    Shader& operator=(const Shader&) = delete;
+
+    Shader(Shader&& other) noexcept
+    {
+        std::swap(shader, other.shader);
+    }
+    Shader& operator=(Shader&& other) noexcept
+    {
+        destroy();
+        std::swap(shader, other.shader);
+        return *this;
+    }
+
+    static Shader create(
+        std::filesystem::path&& file_path
+    ) {
+        Shader sh(file_path);
+        return sh;
+    }
+
+    operator VkShaderModule() const noexcept { return shader; }
+
+    bool is_load() const noexcept { return shader != VK_NULL_HANDLE; }
+
+private:
+    static VkShaderModule load_shader_module(
+        std::filesystem::path& path
+    ) {
+        std::ifstream file(path, std::ios::binary | std::ios::ate);
+        const std::streampos pos { file.tellg() };
+        if (pos == std::streampos(-1)) return VK_NULL_HANDLE;
+
+        const size_t size { static_cast<size_t>(pos) };
+        std::vector<uint32_t> buffer(size / sizeof(uint32_t));
+
+        file.seekg(0);
+        file.read(reinterpret_cast<char*>(buffer.data()), size);
+
+        VkShaderModuleCreateInfo info
+        {
+            .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+            .codeSize = size,
+            .pCode = buffer.data(),
+        };
+
+        VkShaderModule result;
+        if (vkCreateShaderModule(graphics::internal::context.device,
+                                &info, nullptr, &result) != VK_SUCCESS)
+        {
+            return VK_NULL_HANDLE;
+        } 
+
+        return result;
+    }
+
+    void destroy()
+    {
+        if (shader != VK_NULL_HANDLE)
+        {
+            vkDestroyShaderModule(internal::context.device, shader, nullptr);
+            shader = VK_NULL_HANDLE;
         }
     }
 };

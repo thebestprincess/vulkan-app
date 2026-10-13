@@ -8,48 +8,12 @@
 
 #include <cstddef>
 #include <cstring>
-#include <fstream>
-#include <iosfwd>
 #include <print>
 
 
 namespace graphics::core
 {
 
-namespace utils
-{
-
-VkShaderModule load_shader_module(
-    std::filesystem::path& path
-) {
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
-    const std::streampos pos { file.tellg() };
-    if (pos == std::streampos(-1)) return VK_NULL_HANDLE;
-
-    const size_t size { static_cast<size_t>(pos) };
-    std::vector<uint32_t> buffer(size / sizeof(uint32_t));
-
-    file.seekg(0);
-    file.read(reinterpret_cast<char*>(buffer.data()), size);
-
-    VkShaderModuleCreateInfo info
-    {
-        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = size,
-        .pCode = buffer.data(),
-    };
-
-    VkShaderModule result;
-    if (vkCreateShaderModule(graphics::internal::context.device,
-                             &info, nullptr, &result) != VK_SUCCESS)
-    {
-        return VK_NULL_HANDLE;
-    } 
-
-    return result;
-}
-
-} // namespace graphics::core::utils
 
 
 void PipelineBuilder::setup()
@@ -308,12 +272,10 @@ void VulkanEngine::init()
     init_buffers();
     init_descriptors();
 
-    std::filesystem::path vertPath = std::filesystem::current_path() / "shaders" / "shader.vert.spv";
-    std::filesystem::path fragPath = std::filesystem::current_path() / "shaders" / "shader.frag.spv";
-    VkShaderModule vertShader = utils::load_shader_module(vertPath);
-    VkShaderModule fragShader = utils::load_shader_module(fragPath);
+    Shader vertShader(std::filesystem::current_path() / "shaders" / "shader.vert.spv");
+    Shader fragShader(std::filesystem::current_path() / "shaders" / "shader.frag.spv");
 
-    if (vertShader == VK_NULL_HANDLE || fragShader == VK_NULL_HANDLE)
+    if (!vertShader.is_load() || !fragShader.is_load())
     {
         std::println(stderr, "ERROR: Failed to load shaders! Check your file paths.");
         return;
@@ -356,9 +318,6 @@ void VulkanEngine::init()
     builder._inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 
     pipeline = builder.build_pipeline(internal::context.device);
-
-    vkDestroyShaderModule(internal::context.device, vertShader, nullptr);
-    vkDestroyShaderModule(internal::context.device, fragShader, nullptr);
 }
 
 void VulkanEngine::cleanup()
