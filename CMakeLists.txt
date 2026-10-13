@@ -8,6 +8,7 @@ add_executable(${PROJECT_NAME}
 	source/graphics_internal.cpp
 	source/application.cpp
 	source/graphics.cpp
+	source/gpu_resources.cpp
 )
 
 if(LINUX)
