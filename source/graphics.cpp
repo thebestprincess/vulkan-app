@@ -161,47 +161,10 @@ void VulkanEngine::init_buffers()
 
 void VulkanEngine::init_descriptors()
 {
-    VkDevice& device = graphics::internal::context.device;
+    VkDevice device = graphics::internal::context.device;
 
-    VkDescriptorSetLayoutBinding cameraBinding
-    {
-        .binding = 0,
-        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        .descriptorCount = 1,
-        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT
-    };
-    VkDescriptorSetLayoutCreateInfo cameraLayoutInfo
-    {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = 1,
-        .pBindings = &cameraBinding
-    };
-    vkCreateDescriptorSetLayout(device, &cameraLayoutInfo, nullptr, &cameraSetLayout);
-
-
-    VkDescriptorSetLayoutBinding objectBinding
-    {
-        .binding = 0,
-        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        .descriptorCount = 1,
-        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT
-    };
-    VkDescriptorSetLayoutCreateInfo objectLayoutInfo
-    {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = 1,
-        .pBindings = &objectBinding
-    };
-    vkCreateDescriptorSetLayout(device, &objectLayoutInfo, nullptr, &objectSetLayout);
-
-
-    VkDescriptorPoolSize poolSize
-    {
-        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        .descriptorCount = 10
-    };
-    VkDescriptorPoolCreateInfo poolInfo
-    {
+    VkDescriptorPoolSize poolSize{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10 };
+    VkDescriptorPoolCreateInfo poolInfo{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .maxSets = 10,
         .poolSizeCount = 1,
@@ -209,62 +172,37 @@ void VulkanEngine::init_descriptors()
     };
     vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool);
 
-    VkDescriptorSetLayout layouts[] { cameraSetLayout, objectSetLayout, objectSetLayout };
-    VkDescriptorSetAllocateInfo allocInfo
-    {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-        .descriptorPool = descriptorPool,
-        .descriptorSetCount = 3,
-        .pSetLayouts = layouts
-    };
-    VkDescriptorSet sets[3];
-    vkAllocateDescriptorSets(device, &allocInfo, sets);
-    cameraDescriptorSet = sets[0];
-    objectDescriptorSet = sets[1];
-    object2DescriptorSet = sets[2];
 
-    VkDescriptorBufferInfo camInfo
-    {
+    DescriptorBuilder builder;
+
+    VkDescriptorBufferInfo camInfo{
         .buffer = sceneUniformBuffer.buffer,
         .offset = 0,
         .range = sizeof(SceneUniform)
     };
-    VkDescriptorBufferInfo objInfo
-    {
+
+    builder.bind_buffer(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, camInfo)
+           .build(device, descriptorPool, cameraSetLayout, cameraDescriptorSet);
+
+
+    VkDescriptorBufferInfo objInfo{
         .buffer = objectUniformBuffer.buffer,
         .offset = 0,
         .range = sizeof(ObjectUniform)
     };
-    VkDescriptorBufferInfo obj2Info
-    {
+
+    builder.bind_buffer(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, objInfo)
+           .build(device, descriptorPool, objectSetLayout, objectDescriptorSet);
+
+
+    VkDescriptorBufferInfo obj2Info{
         .buffer = object2UniformBuffer.buffer,
         .offset = 0,
         .range = sizeof(ObjectUniform)
     };
 
-    VkWriteDescriptorSet writes[3]{};
-    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[0].dstSet = cameraDescriptorSet;
-    writes[0].dstBinding = 0;
-    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    writes[0].descriptorCount = 1;
-    writes[0].pBufferInfo = &camInfo;
-
-    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[1].dstSet = objectDescriptorSet;
-    writes[1].dstBinding = 0;
-    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    writes[1].descriptorCount = 1;
-    writes[1].pBufferInfo = &objInfo;
-
-    writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[2].dstSet = object2DescriptorSet;
-    writes[2].dstBinding = 0;
-    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    writes[2].descriptorCount = 1;
-    writes[2].pBufferInfo = &obj2Info;
-
-    vkUpdateDescriptorSets(device, 3, writes, 0, nullptr);
+    builder.bind_buffer(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, obj2Info)
+           .build_existing_layout(device, descriptorPool, objectSetLayout, object2DescriptorSet);
 }
 
 void VulkanEngine::init()

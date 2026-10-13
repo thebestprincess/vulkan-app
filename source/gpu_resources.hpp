@@ -2,6 +2,8 @@
 
 #include "graphics_internal.hpp"
 
+#include <cstdint>
+#include <deque>
 #include <vulkan/vulkan_core.h>
 #include <vk_mem_alloc.h>
 
@@ -14,14 +16,6 @@
 
 namespace graphics::core
 {
-
-namespace utils
-{
-
-
-} // namespace graphics::core::utils
-
-
 
 class Buffer final
 {
@@ -90,6 +84,8 @@ public:
         vmaGetAllocationInfo(allocator, allocation, &allocInfo);
         std::memcpy(allocInfo.pMappedData, data.data(), data.size_bytes());
     }
+
+    operator VkBuffer() const noexcept { return buffer; }
 
 private:
     void destroy()
@@ -179,6 +175,159 @@ private:
     }
 };
 
+class DescriptorBuilder final
+{
+    std::vector<VkDescriptorSetLayoutBinding> bindings_;
+    std::vector<VkWriteDescriptorSet> writes_;
 
+    std::deque<VkDescriptorBufferInfo> bufferInfos_;
+    std::deque<VkDescriptorImageInfo> imageInfos_;
+
+public:
+    DescriptorBuilder() = default;
+
+    DescriptorBuilder& bind_buffer(
+        uint32_t binding,
+        VkDescriptorType type,
+        VkShaderStageFlags stageFlags,
+        VkDescriptorBufferInfo bufferInfo
+    ) {
+        bindings_.push_back(
+            VkDescriptorSetLayoutBinding 
+            {
+                .binding = binding,
+                .descriptorType = type,
+                .descriptorCount = 1,
+                .stageFlags = stageFlags,
+                .pImmutableSamplers = nullptr
+            }
+        );
+
+        bufferInfos_.push_back(std::move(bufferInfo));
+
+        writes_.push_back(
+            VkWriteDescriptorSet
+            {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstBinding = binding,
+                .descriptorCount = 1,
+                .descriptorType = type,
+                .pBufferInfo = &bufferInfos_.back(),
+            }
+        );
+
+        return *this;
+    }
+
+
+    DescriptorBuilder& bind_image(
+        uint32_t binding,
+        VkDescriptorType type,
+        VkShaderStageFlags stageFlags,
+        VkDescriptorImageInfo imageInfo
+    ) {
+        bindings_.push_back(
+            VkDescriptorSetLayoutBinding 
+            {
+                .binding = binding,
+                .descriptorType = type,
+                .descriptorCount = 1,
+                .stageFlags = stageFlags,
+                .pImmutableSamplers = nullptr
+            }
+        );
+
+        imageInfos_.push_back(imageInfo);
+
+        writes_.push_back(
+            VkWriteDescriptorSet
+            {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstBinding = binding,
+                .descriptorCount = 1,
+                .descriptorType = type,
+                .pImageInfo = &imageInfos_.back(),
+            }
+        );
+
+        return *this;
+    }    
+
+    bool build(
+        VkDevice device,
+        VkDescriptorPool pool,
+        VkDescriptorSetLayout& outLayout,
+        VkDescriptorSet& outSet
+    ) {
+        VkDescriptorSetLayoutCreateInfo layoutInfo
+        {
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            .bindingCount = static_cast<uint32_t>(bindings_.size()),
+            .pBindings = bindings_.data()
+        };
+        if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &outLayout) != VK_SUCCESS)
+        {
+            return false;
+        }
+
+        VkDescriptorSetAllocateInfo allocInfo
+        {
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+            .descriptorPool = pool,
+            .descriptorSetCount = 1,
+            .pSetLayouts = &outLayout 
+        };
+        if (vkAllocateDescriptorSets(device, &allocInfo, &outSet) != VK_SUCCESS)
+        {
+            return false;
+        }
+        
+        for (auto& write : writes_)
+        {
+            write.dstSet = outSet;
+        }
+
+        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes_.size()), writes_.data(), 0, nullptr);
+
+        clear();
+        return true;
+    }
+
+    bool build_existing_layout(
+        VkDevice device,
+        VkDescriptorPool pool,
+        VkDescriptorSetLayout layout,
+        VkDescriptorSet& outSet
+    ) {
+        VkDescriptorSetAllocateInfo allocInfo
+        {
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+            .descriptorPool = pool,
+            .descriptorSetCount = 1,
+            .pSetLayouts = &layout 
+        };
+        if (vkAllocateDescriptorSets(device, &allocInfo, &outSet) != VK_SUCCESS)
+        {
+            return false;
+        }
+        
+        for (auto& write : writes_)
+        {
+            write.dstSet = outSet;
+        }
+
+        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes_.size()), writes_.data(), 0, nullptr);
+
+        return true;
+    }
+
+    void clear()
+    {
+        bindings_.clear();
+        writes_.clear();
+        bufferInfos_.clear();
+        imageInfos_.clear();
+    }
+};
 
 } // namespace graphics::core
