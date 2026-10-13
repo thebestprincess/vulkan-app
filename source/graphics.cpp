@@ -162,51 +162,24 @@ void VulkanEngine::init_buffers()
 void VulkanEngine::init_descriptors()
 {
     VkDevice device = graphics::internal::context.device;
-
-    VkDescriptorPoolSize poolSize{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10 };
-    VkDescriptorPoolCreateInfo poolInfo{
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-        .maxSets = 10,
-        .poolSizeCount = 1,
-        .pPoolSizes = &poolSize
-    };
-    vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool);
-
-
     DescriptorBuilder builder;
 
-    VkDescriptorBufferInfo camInfo{
-        .buffer = sceneUniformBuffer.buffer,
-        .offset = 0,
-        .range = sizeof(SceneUniform)
-    };
-
+    VkDescriptorBufferInfo camInfo{sceneUniformBuffer.buffer, 0, sizeof(SceneUniform)};
     builder.bind_buffer(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, camInfo)
-           .build(device, descriptorPool, cameraSetLayout, cameraDescriptorSet);
+           .build(device, descriptorAllocator, cameraSetLayout, cameraDescriptorSet);
 
-
-    VkDescriptorBufferInfo objInfo{
-        .buffer = objectUniformBuffer.buffer,
-        .offset = 0,
-        .range = sizeof(ObjectUniform)
-    };
-
+    VkDescriptorBufferInfo objInfo{objectUniformBuffer.buffer, 0, sizeof(ObjectUniform)};
     builder.bind_buffer(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, objInfo)
-           .build(device, descriptorPool, objectSetLayout, objectDescriptorSet);
+           .build(device, descriptorAllocator, objectSetLayout, objectDescriptorSet);
 
-
-    VkDescriptorBufferInfo obj2Info{
-        .buffer = object2UniformBuffer.buffer,
-        .offset = 0,
-        .range = sizeof(ObjectUniform)
-    };
-
+    VkDescriptorBufferInfo obj2Info{object2UniformBuffer.buffer, 0, sizeof(ObjectUniform)};
     builder.bind_buffer(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, obj2Info)
-           .build_existing_layout(device, descriptorPool, objectSetLayout, object2DescriptorSet);
+           .build_existing_layout(device, descriptorAllocator, objectSetLayout, object2DescriptorSet);
 }
 
 void VulkanEngine::init()
 {
+    descriptorAllocator.init(graphics::internal::context.device);
     init_buffers();
     init_descriptors();
 
@@ -272,12 +245,10 @@ void VulkanEngine::cleanup()
         vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
     }
 
-    if (descriptorPool != VK_NULL_HANDLE)
-    {
-        vkDestroyDescriptorPool(device, descriptorPool, nullptr);
-        vkDestroyDescriptorSetLayout(device, cameraSetLayout, nullptr);
-        vkDestroyDescriptorSetLayout(device, objectSetLayout, nullptr);
-    }
+    descriptorAllocator.cleanup();
+
+    vkDestroyDescriptorSetLayout(device, cameraSetLayout, nullptr);
+    vkDestroyDescriptorSetLayout(device, objectSetLayout, nullptr);
 }
 
 void VulkanEngine::draw(VkCommandBuffer cmd, VkFramebuffer framebuffer, const FrameRenderData& data)

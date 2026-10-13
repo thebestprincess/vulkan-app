@@ -104,7 +104,7 @@ public:
     VkPipeline pipeline;
     VkDescriptorSetLayout desriptorSetLayout;
     VkDescriptorSet desriptorSet;
-    VkDescriptorPool descriptorPool;
+    DescriptorAllocator descriptorAllocator;
 
     VkDescriptorSetLayout cameraSetLayout; // Set 0
     VkDescriptorSetLayout objectSetLayout; // Set 1

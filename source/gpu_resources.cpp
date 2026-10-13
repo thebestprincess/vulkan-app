@@ -1,5 +1,6 @@
 #include "gpu_resources.hpp"
 
+#include <cstdint>
 #include <print>
 #include <utility>
 #include <fstream>
@@ -203,7 +204,7 @@ DescriptorBuilder& DescriptorBuilder::bind_image(
 
 bool DescriptorBuilder::build(
     VkDevice device,
-    VkDescriptorPool pool,
+    DescriptorAllocator& allocator,
     VkDescriptorSetLayout& outLayout,
     VkDescriptorSet& outSet
 ) {
@@ -218,23 +219,12 @@ bool DescriptorBuilder::build(
         return false;
     }
 
-    VkDescriptorSetAllocateInfo allocInfo
-    {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-        .descriptorPool = pool,
-        .descriptorSetCount = 1,
-        .pSetLayouts = &outLayout 
-    };
-    if (vkAllocateDescriptorSets(device, &allocInfo, &outSet) != VK_SUCCESS)
+    if (!allocator.allocate(outSet, outLayout))
     {
         return false;
     }
     
-    for (auto& write : writes_)
-    {
-        write.dstSet = outSet;
-    }
-
+    for (auto& write : writes_) { write.dstSet = outSet; }
     vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes_.size()), writes_.data(), 0, nullptr);
 
     clear();
@@ -243,29 +233,19 @@ bool DescriptorBuilder::build(
 
 bool DescriptorBuilder::build_existing_layout(
     VkDevice device,
-    VkDescriptorPool pool,
+    DescriptorAllocator& allocator,
     VkDescriptorSetLayout layout,
     VkDescriptorSet& outSet
 ) {
-    VkDescriptorSetAllocateInfo allocInfo
-    {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-        .descriptorPool = pool,
-        .descriptorSetCount = 1,
-        .pSetLayouts = &layout 
-    };
-    if (vkAllocateDescriptorSets(device, &allocInfo, &outSet) != VK_SUCCESS)
+    if (!allocator.allocate(outSet, layout))
     {
         return false;
     }
     
-    for (auto& write : writes_)
-    {
-        write.dstSet = outSet;
-    }
-
+    for (auto& write : writes_) { write.dstSet = outSet; }
     vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes_.size()), writes_.data(), 0, nullptr);
 
+    clear();
     return true;
 }
 
@@ -275,6 +255,122 @@ void DescriptorBuilder::clear()
     writes_.clear();
     bufferInfos_.clear();
     imageInfos_.clear();
+}
+
+
+
+
+
+void DescriptorAllocator::init(VkDevice dev)
+{
+    device = dev;
+}
+
+void DescriptorAllocator::cleanup()
+{
+    for (auto p : freePools) { vkDestroyDescriptorPool(device, p, nullptr); }
+    for (auto p : usedPools) { vkDestroyDescriptorPool(device, p, nullptr); }
+    if (currentPool) { vkDestroyDescriptorPool(device, currentPool, nullptr); }
+}
+
+void DescriptorAllocator::reset_pools()
+{
+    for (auto p : usedPools)
+    {
+        vkResetDescriptorPool(device, p, 0);
+        freePools.push_back(p);
+    }
+    usedPools.clear();
+    
+    if (currentPool)
+    {
+        vkResetDescriptorPool(device, currentPool, 0);
+        freePools.push_back(currentPool);
+        currentPool = VK_NULL_HANDLE;
+    }
+}
+
+VkDescriptorPool DescriptorAllocator::create_pool(
+    uint32_t count,
+    VkDescriptorPoolCreateFlags flags
+) {
+    std::vector<VkDescriptorPoolSize> sizes{};
+    sizes.reserve(descriptorSizes.sizes.size());
+    for (auto sz : descriptorSizes.sizes)
+    {
+        sizes.push_back({ sz.first, static_cast<uint32_t>(sz.second * count) });
+    }
+
+    VkDescriptorPoolCreateInfo pool_info
+    {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .flags = flags,
+        .maxSets = count,
+        .poolSizeCount = static_cast<uint32_t>(sizes.size()),
+        .pPoolSizes = sizes.data()
+    };
+
+    VkDescriptorPool descriptorPool;
+    vkCreateDescriptorPool(device, &pool_info, nullptr, &descriptorPool);
+    return descriptorPool;
+}
+
+VkDescriptorPool DescriptorAllocator::grab_pool()
+{
+    if (!freePools.empty())
+    {
+        VkDescriptorPool pool { freePools.back() };
+        freePools.pop_back();
+        return pool;
+    }
+    else
+    {
+        return create_pool(1000, 0);
+    }
+}
+
+bool DescriptorAllocator::allocate(
+    VkDescriptorSet& set,
+    VkDescriptorSetLayout layout
+) {
+    if (currentPool == VK_NULL_HANDLE)
+    {
+        currentPool = grab_pool();
+    }
+
+    VkDescriptorSetAllocateInfo allocInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool = currentPool,
+        .descriptorSetCount = 1,
+        .pSetLayouts = &layout
+    };
+
+    VkResult allocResult { vkAllocateDescriptorSets(device, &allocInfo, &set) };
+    
+    switch (allocResult)
+    {
+        case VK_SUCCESS:
+        {
+            return true;
+        }
+        case VK_ERROR_FRAGMENTED_POOL:
+        case VK_ERROR_OUT_OF_POOL_MEMORY:
+        {
+            usedPools.push_back(currentPool);
+            currentPool = grab_pool();
+            allocInfo.descriptorPool = currentPool;
+            if (vkAllocateDescriptorSets(device, &allocInfo, &set) == VK_SUCCESS)
+            {
+                return true;
+            }
+            return false;
+        }
+        default:
+        {
+            return false;
+        }
+    }
 }
 
 
