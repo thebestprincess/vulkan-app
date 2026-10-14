@@ -1,45 +1,12 @@
 #pragma once
 
+#include "common.hpp"
 #include "gpu_resources.hpp"
 
 #include <vulkan/vulkan_core.h>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-
-#include <deque>
-#include <functional>
-#include <ranges>
-#include <filesystem>
-
-namespace graphics::core::uitls
-{
-
-struct DeletionQueue
-{
-	std::deque<std::function<void()>> deletors{};
-
-	void push_function(std::function<void()>&& function)
-    {
-		deletors.push_back(std::move(function));
-	}
-
-	void flush()
-    {
-        auto local { std::move(deletors) };
-        deletors.clear();
-
-		// reverse iterate the deletion queue to execute all the functions
-		for (auto& func : deletors | std::views::reverse)
-        {
-			func();
-		}
-	}
-
-    VkShaderModule load_shader_module(std::filesystem::path& path) const;
-};
-
-} // namespace graphics::core::uitls
 
 namespace graphics::core
 {
@@ -64,38 +31,17 @@ struct Transform final
 struct RenderObjectData final
 {
     glm::mat4 modelMatrix;
-    glm::vec4 color;
+    Material material;
 };
 
 struct FrameRenderData final
 {
-    glm::mat4 view;
-    glm::mat4 proj;
+    SceneUniform sceneUniform;
+    std::span<const PointLight> pointLights;
+    std::span<const SpotLight> spotLights;
     std::span<const RenderObjectData> objects;
 };
 
-struct AllocatedBuffer
-{
-    VkBuffer buffer;
-    VmaAllocation allocation;
-};
-
-struct Vertex
-{
-    glm::vec3 position;
-};
-
-struct SceneUniform
-{
-    glm::mat4 view;
-    glm::mat4 proj;
-};
-
-struct ObjectUniform
-{
-    glm::mat4 model;
-    glm::vec4 color;
-};
 
 class VulkanEngine final
 {
@@ -106,13 +52,18 @@ public:
     VkDescriptorSet desriptorSet;
     DescriptorAllocator descriptorAllocator;
 
-    VkDescriptorSetLayout cameraSetLayout; // Set 0
+    VkDescriptorSetLayout sceneSetLayout; // Set 0
     VkDescriptorSetLayout objectSetLayout; // Set 1
     
-    VkDescriptorSet cameraDescriptorSet;
+    VkDescriptorSet sceneDescriptorSet;
     
     Buffer vertexBuffer;
     Buffer indexBuffer;
+
+    static constexpr size_t maxPointLights { 100uz };
+    Buffer pointLightBuffer;
+    static constexpr size_t maxSpotLights { 100uz };
+    Buffer spotLightBuffer;
     
     Buffer sceneUniformBuffer;
     
@@ -126,26 +77,53 @@ public:
     void cleanup();
     void draw(VkCommandBuffer cmd, VkFramebuffer framebuffer, const FrameRenderData& data);
 private:
-    const Vertex vertices[8]
-    {
-        {glm::vec3(-1.0f, -1.0f,  0.0f)},
-        {glm::vec3( 1.0f, -1.0f,  0.0f)},
-        {glm::vec3( 1.0f, -1.0f,  1.0f)},
-        {glm::vec3(-1.0f, -1.0f,  1.0f)},
-        {glm::vec3(-1.0f,  1.0f,  0.0f)},
-        {glm::vec3( 1.0f,  1.0f,  0.0f)},
-        {glm::vec3( 1.0f,  1.0f,  1.0f)},
-        {glm::vec3(-1.0f,  1.0f,  1.0f)},
+        const Vertex vertices[24] = {
+        // Front - Normal: (0, 0, 1)
+        {{-0.5f, -0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}}, // 0
+        {{ 0.5f, -0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}}, // 1
+        {{ 0.5f,  0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}}, // 2
+        {{-0.5f,  0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}}, // 3
+
+        // Back - Normal (0, 0, -1)
+        {{ 0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}}, // 4
+        {{-0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}}, // 5
+        {{-0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}}, // 6
+        {{ 0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}}, // 7
+
+        // Left - Normal: (-1, 0, 0)
+        {{-0.5f, -0.5f, -0.5f}, {-1.0f, 0.0f, 0.0f}}, // 8
+        {{-0.5f, -0.5f,  0.5f}, {-1.0f, 0.0f, 0.0f}}, // 9
+        {{-0.5f,  0.5f,  0.5f}, {-1.0f, 0.0f, 0.0f}}, // 10
+        {{-0.5f,  0.5f, -0.5f}, {-1.0f, 0.0f, 0.0f}}, // 11
+
+        // Right - Normal: (1, 0, 0)
+        {{ 0.5f, -0.5f,  0.5f}, {1.0f, 0.0f, 0.0f}}, // 12
+        {{ 0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}}, // 13
+        {{ 0.5f,  0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}}, // 14
+        {{ 0.5f,  0.5f,  0.5f}, {1.0f, 0.0f, 0.0f}}, // 15
+
+        // Top - Normal: (0, 1, 0)
+        {{-0.5f,  0.5f,  0.5f}, {0.0f, 1.0f, 0.0f}}, // 16
+        {{ 0.5f,  0.5f,  0.5f}, {0.0f, 1.0f, 0.0f}}, // 17
+        {{ 0.5f,  0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}}, // 18
+        {{-0.5f,  0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}}, // 19
+
+        // Bottom - Normal: (0, -1, 0)
+        {{-0.5f, -0.5f, -0.5f}, {0.0f, -1.0f, 0.0f}}, // 20
+        {{ 0.5f, -0.5f, -0.5f}, {0.0f, -1.0f, 0.0f}}, // 21
+        {{ 0.5f, -0.5f,  0.5f}, {0.0f, -1.0f, 0.0f}}, // 22
+        {{-0.5f, -0.5f,  0.5f}, {0.0f, -1.0f, 0.0f}}  // 23
     };
-    const uint32_t indices[36]
-    {
-        0, 1, 5, 0, 5, 4,
-        3, 2, 6, 3, 6, 7,
-        4, 5, 6, 4, 6, 7,
-        0, 1, 2, 0, 2, 3,
-        0, 4, 7, 0, 7, 3,
-        1, 5, 6, 1, 6, 2
+
+    const uint32_t indices[36] = {
+        0, 1, 2, 2, 3, 0,       // Front
+        4, 5, 6, 6, 7, 4,       // Back
+        8, 9, 10, 10, 11, 8,    // Left
+        12, 13, 14, 14, 15, 12, // Right
+        16, 17, 18, 18, 19, 16, // Top
+        20, 21, 22, 22, 23, 20  // Bottom
     };
+
     
     void init_buffers();
     void init_descriptors();

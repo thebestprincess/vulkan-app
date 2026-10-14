@@ -1,6 +1,7 @@
 #include "graphics.hpp"
 #include "gpu_resources.hpp"
 #include "graphics_internal.hpp"
+#include "common.hpp"
 
 #include <cstdint>
 #include <vk_mem_alloc.h>
@@ -147,16 +148,54 @@ void VulkanEngine::init_buffers()
 {
     const auto& allocator = internal::context.allocator;    
 
-    vertexBuffer = Buffer::create(allocator, sizeof(vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_AUTO);
+    vertexBuffer = Buffer::create(
+        allocator,
+        sizeof(vertices),
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        VMA_MEMORY_USAGE_AUTO
+    );
     vertexBuffer.upload_data<Vertex>(allocator, vertices);
 
-    indexBuffer = Buffer::create(allocator, sizeof(indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_AUTO);
+    indexBuffer = Buffer::create(
+        allocator,
+        sizeof(indices),
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        VMA_MEMORY_USAGE_AUTO
+    );
     indexBuffer.upload_data<uint32_t>(allocator, indices);
 
-    sceneUniformBuffer = Buffer::create(allocator, sizeof(SceneUniform), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_AUTO); 
+    sceneUniformBuffer = Buffer::create(
+        allocator,
+        sizeof(SceneUniform),
+        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+        VMA_MEMORY_USAGE_AUTO
+    ); 
 
-    objectUniformBuffer = Buffer::create(allocator, sizeof(ObjectUniform), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_AUTO);
-    object2UniformBuffer = Buffer::create(allocator, sizeof(ObjectUniform), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_AUTO);
+    objectUniformBuffer = Buffer::create(
+        allocator,
+        sizeof(ObjectUniform),
+        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+        VMA_MEMORY_USAGE_AUTO
+    );
+    object2UniformBuffer = Buffer::create(
+        allocator,
+        sizeof(ObjectUniform),
+        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+        VMA_MEMORY_USAGE_AUTO
+    );
+
+    pointLightBuffer = Buffer::create(
+        allocator, 
+        sizeof(PointLight) * maxPointLights, 
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, 
+        VMA_MEMORY_USAGE_AUTO
+    );
+    spotLightBuffer = Buffer::create(
+        allocator, 
+        sizeof(SpotLight) * maxSpotLights, 
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, 
+        VMA_MEMORY_USAGE_AUTO
+    );
 }
 
 void VulkanEngine::init_descriptors()
@@ -164,16 +203,20 @@ void VulkanEngine::init_descriptors()
     VkDevice device = graphics::internal::context.device;
     DescriptorBuilder builder;
 
-    VkDescriptorBufferInfo camInfo{sceneUniformBuffer.buffer, 0, sizeof(SceneUniform)};
-    builder.bind_buffer(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, camInfo)
-           .build(device, descriptorAllocator, cameraSetLayout, cameraDescriptorSet);
+    VkDescriptorBufferInfo sceneInfo { sceneUniformBuffer, 0, sizeof(SceneUniform) };
+    VkDescriptorBufferInfo pointLightInfo { pointLightBuffer, 0, VK_WHOLE_SIZE };
+    VkDescriptorBufferInfo spotLightInfo { spotLightBuffer, 0, VK_WHOLE_SIZE };
+    builder.bind_buffer(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, sceneInfo)
+           .bind_buffer(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, pointLightInfo)
+           .bind_buffer(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, spotLightInfo)
+           .build(device, descriptorAllocator, sceneSetLayout, sceneDescriptorSet);
 
-    VkDescriptorBufferInfo objInfo{objectUniformBuffer.buffer, 0, sizeof(ObjectUniform)};
-    builder.bind_buffer(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, objInfo)
+    VkDescriptorBufferInfo objInfo{objectUniformBuffer, 0, sizeof(ObjectUniform)};
+    builder.bind_buffer(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, objInfo)
            .build(device, descriptorAllocator, objectSetLayout, objectDescriptorSet);
 
-    VkDescriptorBufferInfo obj2Info{object2UniformBuffer.buffer, 0, sizeof(ObjectUniform)};
-    builder.bind_buffer(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, obj2Info)
+    VkDescriptorBufferInfo obj2Info{object2UniformBuffer, 0, sizeof(ObjectUniform)};
+    builder.bind_buffer(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, obj2Info)
            .build_existing_layout(device, descriptorAllocator, objectSetLayout, object2DescriptorSet);
 }
 
@@ -192,7 +235,7 @@ void VulkanEngine::init()
         return;
     }
 
-    VkDescriptorSetLayout layouts[] { cameraSetLayout, objectSetLayout };
+    VkDescriptorSetLayout layouts[] { sceneSetLayout, objectSetLayout };
     VkPipelineLayoutCreateInfo layoutInfo
     {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
@@ -207,12 +250,20 @@ void VulkanEngine::init()
         .stride = sizeof(Vertex),
         .inputRate = VK_VERTEX_INPUT_RATE_VERTEX
     };
-    VkVertexInputAttributeDescription attrDesc
+    VkVertexInputAttributeDescription attrDesc[2]
     {
-        .location = 0,
-        .binding = 0,
-        .format = VK_FORMAT_R32G32B32_SFLOAT,
-        .offset = offsetof(Vertex, position)
+        {
+            .location = 0,
+            .binding = 0,
+            .format = VK_FORMAT_R32G32B32_SFLOAT,
+            .offset = offsetof(Vertex, position)
+        },
+        {
+            .location = 1,
+            .binding = 0,
+            .format = VK_FORMAT_R32G32B32_SFLOAT,
+            .offset = offsetof(Vertex, normal)
+        }
     };
 
     PipelineBuilder builder;
@@ -223,8 +274,8 @@ void VulkanEngine::init()
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
         .vertexBindingDescriptionCount = 1,
         .pVertexBindingDescriptions = &bindingDesc,
-        .vertexAttributeDescriptionCount = 1,
-        .pVertexAttributeDescriptions = &attrDesc
+        .vertexAttributeDescriptionCount = 2,
+        .pVertexAttributeDescriptions = attrDesc
     };
     builder._inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 
@@ -247,7 +298,7 @@ void VulkanEngine::cleanup()
 
     descriptorAllocator.cleanup();
 
-    vkDestroyDescriptorSetLayout(device, cameraSetLayout, nullptr);
+    vkDestroyDescriptorSetLayout(device, sceneSetLayout, nullptr);
     vkDestroyDescriptorSetLayout(device, objectSetLayout, nullptr);
 }
 
@@ -263,11 +314,17 @@ void VulkanEngine::draw(VkCommandBuffer cmd, VkFramebuffer framebuffer, const Fr
     if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS) { return; }
 
 
-    SceneUniform sceneUbo{ data.view, data.proj };
-    VmaAllocationInfo camAlloc;
-    vmaGetAllocationInfo(ctx.allocator, sceneUniformBuffer.allocation, &camAlloc);
-    std::memcpy(camAlloc.pMappedData, &sceneUbo, sizeof(sceneUbo));
+    SceneUniform sceneUbo { std::move(data.sceneUniform) };
+    sceneUniformBuffer.upload_data<SceneUniform>(ctx.allocator, std::span{&sceneUbo, 1});
 
+    if (!data.pointLights.empty())
+    {
+        pointLightBuffer.upload_data<PointLight>(ctx.allocator, data.pointLights);
+    }
+    if (!data.spotLights.empty())
+    {
+        spotLightBuffer.upload_data<SpotLight>(ctx.allocator, data.spotLights);
+    }
 
 
     VkClearValue clearValues[2] = {};
@@ -316,16 +373,16 @@ void VulkanEngine::draw(VkCommandBuffer cmd, VkFramebuffer framebuffer, const Fr
         {
             if (i >= 2) break; 
 
-            ObjectUniform objUbo{ data.objects[i].modelMatrix, data.objects[i].color };
+            ObjectUniform objUbo{ data.objects[i].modelMatrix, { data.objects[i].material } };
             
             VmaAllocationInfo objAllocInfo;
             vmaGetAllocationInfo(ctx.allocator, objectAllocations[i], &objAllocInfo);
             std::memcpy(objAllocInfo.pMappedData, &objUbo, sizeof(objUbo));
 
-            VkDescriptorSet sets[] = { cameraDescriptorSet, objectSets[i] };
+            VkDescriptorSet sets[] = { sceneDescriptorSet, objectSets[i] };
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 2, sets, 0, nullptr);
             
-            vkCmdDrawIndexed(cmd, 36, 1, 0, 0, 0);
+            vkCmdDrawIndexed(cmd, sizeof(indices) / sizeof(indices[0]), 1, 0, 0, 0);
         }
     }
 
