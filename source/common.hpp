@@ -10,6 +10,7 @@ struct Vertex
     glm::vec3 normal;
 };
 
+
 struct SceneUniform
 {
     glm::mat4 view;
@@ -25,6 +26,7 @@ struct SceneUniform
     glm::vec2 padding;
 };
 
+
 struct Material
 {
     glm::vec4 albedo;
@@ -36,6 +38,7 @@ struct Material
 struct ObjectUniform
 {
     glm::mat4 model;
+    glm::mat4 normalMatrix;
     Material material;
 };
 
@@ -45,13 +48,18 @@ struct PointLight
 {
     glm::vec4 position;
     glm::vec4 color;
+    float linear;
+    float quadratic;
+    glm::vec2 padding;
 };
 
 struct SpotLight
 {
-    glm::vec4 position;
-    glm::vec4 direction;
-    glm::vec4 color;
-    glm::vec2 angles;
-    glm::vec2 padding;
+    alignas(16) glm::vec4 position;
+    alignas(16) glm::vec4 direction;
+    alignas(16) glm::vec4 color;
+    float innerCutoff;
+    float outerCutoff;
+    float linear;
+    float quadratic;
 };

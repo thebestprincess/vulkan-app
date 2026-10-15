@@ -35,7 +35,7 @@ public:
         
         return glm::lookAt(position, position + front, glm::vec3(0, 1, 0));
     }
-} g_camera;
+};
 
 struct AppObject
 {
@@ -51,7 +51,9 @@ struct AppObject
 
 struct AppState
 {
+    Camera camera{};
     std::vector<PointLight> pointLights{};
+    std::vector<SpotLight> spotLights{};
     int projectionType{0}; // 0 - Perspective, 1 - Orthographic
     std::vector<AppObject> objects;
 } g_state;
@@ -82,6 +84,24 @@ bool initialize()
         }
     });
 
+    // g_state.spotLights.push_back({
+    //     .position = glm::vec4(),
+    //     .direction = glm::vec4(),
+    //     .color = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f),
+    //     .angles = glm::vec2(),
+    //     .linear = 0.045,
+    //     .quadratic = 0.0075,
+    // });
+
+    // g_state.pointLights.push_back({
+    //     .position = glm::vec4(),
+    //     .direction = glm::vec4(),
+    //     .color = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f),
+    //     .angles = glm::vec2(),
+    //     .linear = 0.22,
+    //     .quadratic = 0.2,
+    // });
+
     return true;
 }
 
@@ -100,7 +120,7 @@ void update([[maybe_unused]] double time)
     float dt = static_cast<float>(time - lastTime);
     lastTime = time;
 
-    ImGui::Begin("Lab 1: 3D Graphics");
+    ImGui::Begin("Lab 2: 3D Graphics");
     
     ImGui::Text("Projection");
     ImGui::RadioButton("Perspective", &g_state.projectionType, 0); ImGui::SameLine();
@@ -116,6 +136,7 @@ void update([[maybe_unused]] double time)
             ImGui::SliderFloat3("Position", glm::value_ptr(obj.transform.position), -5.0f, 5.0f);
             ImGui::SliderFloat3("Rotation", glm::value_ptr(obj.transform.rotation), 0.0f, 360.0f);
             ImGui::SliderFloat3("Scale", glm::value_ptr(obj.transform.scale), 0.1f, 3.0f);
+            ImGui::SliderFloat3("Color", glm::value_ptr(obj.transform.scale), 0.1f, 3.0f);
             
             ImGui::Separator();
             
@@ -152,19 +173,19 @@ void render(const graphics::internal::FrameData& fd)
     graphics::core::FrameRenderData renderData;
     renderData.sceneUniform = 
     {
-        .view = g_camera.get_view_matrix(),
-        .cameraPosition = glm::vec4(g_camera.position, 1.0f),
+        .view = g_state.camera.get_view_matrix(),
+        .cameraPosition = glm::vec4(g_state.camera.position, 1.0f),
         .ambientLight = glm::vec4(0.1f, 0.1f, 0.1f, 1.0f),
         .dirLightDir = glm::vec4(0.0f, -1.0f, 1.0f, 0.0f),
         .dirLightColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f),
-        .pointLightCount = 0,
-        .spotLightCount = 0,
+        .pointLightCount = static_cast<uint32_t>(g_state.pointLights.size()),
+        .spotLightCount = static_cast<uint32_t>(g_state.spotLights.size()),
     };
 
     float aspect = static_cast<float>(context.swapchain_extent.width) / static_cast<float>(context.swapchain_extent.height);
     if (g_state.projectionType == 0)
     {
-        renderData.sceneUniform.proj = glm::perspectiveZO(g_camera.fovy, aspect, 0.1f, 100.0f);
+        renderData.sceneUniform.proj = glm::perspectiveZO(g_state.camera.fovy, aspect, 0.1f, 100.0f);
     }
     else
     {
@@ -179,6 +200,7 @@ void render(const graphics::internal::FrameData& fd)
     {
         renderObjects.push_back({
             .modelMatrix = obj.transform.get_matrix(),
+            .normalMatrix = obj.transform.get_normal_matrix(),
             .material = obj.material
         });
     }

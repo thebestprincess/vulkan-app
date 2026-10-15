@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common.hpp"
+#include "glm/matrix.hpp"
 #include "gpu_resources.hpp"
 
 #include <vulkan/vulkan_core.h>
@@ -26,11 +27,17 @@ struct Transform final
         mat = glm::scale(mat, scale);
         return mat;
     }
+    glm::mat4 get_normal_matrix() const
+    {
+        glm::mat4 mat = get_matrix();
+        return glm::transpose(glm::inverse(mat));
+    }
 };
 
 struct RenderObjectData final
 {
     glm::mat4 modelMatrix;
+    glm::mat4 normalMatrix;
     Material material;
 };
 

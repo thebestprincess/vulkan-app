@@ -15,8 +15,6 @@
 namespace graphics::core
 {
 
-
-
 void PipelineBuilder::setup()
 {
     _inputAssembly = {
@@ -27,7 +25,7 @@ void PipelineBuilder::setup()
     _rasterizer = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
         .polygonMode = VK_POLYGON_MODE_FILL,
-        .cullMode = VK_CULL_MODE_NONE,
+        .cullMode = VK_CULL_MODE_FRONT_BIT,
         .frontFace = VK_FRONT_FACE_CLOCKWISE,
         .lineWidth = 1.0f,
     };
@@ -228,7 +226,6 @@ void VulkanEngine::init()
 
     Shader vertShader(std::filesystem::current_path() / "shaders" / "shader.vert.spv");
     Shader fragShader(std::filesystem::current_path() / "shaders" / "shader.frag.spv");
-
     if (!vertShader.is_load() || !fragShader.is_load())
     {
         std::println(stderr, "ERROR: Failed to load shaders! Check your file paths.");
@@ -244,11 +241,13 @@ void VulkanEngine::init()
     };
     vkCreatePipelineLayout(internal::context.device, &layoutInfo, nullptr, &pipelineLayout);
 
-    VkVertexInputBindingDescription bindingDesc
+    VkVertexInputBindingDescription bindingDesc[]
     {
-        .binding = 0,
-        .stride = sizeof(Vertex),
-        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX
+        {
+            .binding = 0,
+            .stride = sizeof(Vertex),
+            .inputRate = VK_VERTEX_INPUT_RATE_VERTEX
+        }
     };
     VkVertexInputAttributeDescription attrDesc[2]
     {
@@ -272,9 +271,9 @@ void VulkanEngine::init()
 
     builder._vertexInputInfo = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-        .vertexBindingDescriptionCount = 1,
-        .pVertexBindingDescriptions = &bindingDesc,
-        .vertexAttributeDescriptionCount = 2,
+        .vertexBindingDescriptionCount = sizeof(bindingDesc) / sizeof(bindingDesc[0]),
+        .pVertexBindingDescriptions = bindingDesc,
+        .vertexAttributeDescriptionCount = sizeof(attrDesc) / sizeof(attrDesc[0]),
         .pVertexAttributeDescriptions = attrDesc
     };
     builder._inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
@@ -373,7 +372,7 @@ void VulkanEngine::draw(VkCommandBuffer cmd, VkFramebuffer framebuffer, const Fr
         {
             if (i >= 2) break; 
 
-            ObjectUniform objUbo{ data.objects[i].modelMatrix, { data.objects[i].material } };
+            ObjectUniform objUbo{ data.objects[i].modelMatrix, data.objects[i].normalMatrix,{ data.objects[i].material } };
             
             VmaAllocationInfo objAllocInfo;
             vmaGetAllocationInfo(ctx.allocator, objectAllocations[i], &objAllocInfo);
