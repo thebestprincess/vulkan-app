@@ -1,4 +1,4 @@
-// shader.frag
+// lit_shader.frag
 
 #version 450
 

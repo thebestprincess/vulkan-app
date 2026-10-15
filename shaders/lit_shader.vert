@@ -1,4 +1,4 @@
-// shader.vert
+// lit_shader.vert
 
 #version 450
 

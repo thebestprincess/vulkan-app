@@ -7,7 +7,7 @@ add_executable(${PROJECT_NAME}
 	source/main.cpp
 	source/graphics_internal.cpp
 	source/application.cpp
-	source/graphics.cpp
+	source/engine.cpp
 	source/gpu_resources.cpp
 	source/pipeline_builder.cpp
 )

@@ -4,7 +4,7 @@
 #include "glm/ext/vector_float3.hpp"
 #include "glm/ext/vector_float4.hpp"
 #include "glm/trigonometric.hpp"
-#include "graphics.hpp"
+#include "engine.hpp"
 #include "graphics_internal.hpp"
 
 #include <imgui.h>
@@ -37,10 +37,33 @@ public:
     }
 };
 
+struct Transform final
+{
+    glm::vec3 position{0.0f};
+    glm::vec3 rotation{0.0f};
+    glm::vec3 scale{1.0f};
+
+    glm::mat4 get_matrix() const
+    {
+        glm::mat4 mat = glm::translate(glm::mat4(1.0f), position);
+        mat = glm::rotate(mat, glm::radians(rotation.x), glm::vec3(1, 0, 0));
+        mat = glm::rotate(mat, glm::radians(rotation.y), glm::vec3(0, 1, 0));
+        mat = glm::rotate(mat, glm::radians(rotation.z), glm::vec3(0, 0, 1));
+        mat = glm::scale(mat, scale);
+        return mat;
+    }
+    glm::mat4 get_normal_matrix() const
+    {
+        glm::mat4 mat = get_matrix();
+        return glm::transpose(glm::inverse(mat));
+    }
+};
+
 struct AppObject
 {
     std::string name;
-    graphics::core::Transform transform;
+    const graphics::core::Mesh* mesh;
+    Transform transform;
     Material material;
 
     bool isAnimating = false;
@@ -55,7 +78,9 @@ struct AppState
     std::vector<PointLight> pointLights{};
     std::vector<SpotLight> spotLights{};
     int projectionType{0}; // 0 - Perspective, 1 - Orthographic
-    std::vector<AppObject> objects;
+    std::vector<AppObject> litObjects;
+    std::vector<AppObject> unlitObjects;
+    std::vector<AppObject> lineObjects;
 } g_state;
 
 
@@ -64,8 +89,9 @@ bool initialize()
     g_engine = std::make_unique<graphics::core::VulkanEngine>();
     g_engine->init();
 
-    g_state.objects.push_back({
+    g_state.litObjects.push_back({
         .name = "Cube 1",
+        .mesh = &g_engine->cubeMesh,
         .transform = { .position = {0.0f, 0.0f, -5.0f} },
         .material = {
             .albedo = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f),
@@ -74,8 +100,9 @@ bool initialize()
         }
     });
 
-    g_state.objects.push_back({
+    g_state.litObjects.push_back({
         .name = "Cube 2",
+        .mesh = &g_engine->cubeMesh,
         .transform = { .position = {1.5f, 0.0f, -5.0f} },
         .material = {
             .albedo = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f),
@@ -84,23 +111,22 @@ bool initialize()
         }
     });
 
-    // g_state.spotLights.push_back({
-    //     .position = glm::vec4(),
-    //     .direction = glm::vec4(),
-    //     .color = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f),
-    //     .angles = glm::vec2(),
-    //     .linear = 0.045,
-    //     .quadratic = 0.0075,
-    // });
+    g_state.spotLights.push_back({
+        .position = glm::vec4(0.0f, 2.0f, 0.0f, 1.0f),
+        .direction = glm::vec4(0.0f, -1.0f, 0.0f, 1.0f),
+        .color = glm::vec4(1.0f, 1.0f, 0.0f, 1.0f),
+        .innerCutoff = glm::cos(glm::radians(70.0f)),
+        .outerCutoff = glm::cos(glm::radians(30.0f)),
+        .linear = 0.045,
+        .quadratic = 0.0075,
+    });
 
-    // g_state.pointLights.push_back({
-    //     .position = glm::vec4(),
-    //     .direction = glm::vec4(),
-    //     .color = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f),
-    //     .angles = glm::vec2(),
-    //     .linear = 0.22,
-    //     .quadratic = 0.2,
-    // });
+    g_state.pointLights.push_back({
+        .position = glm::vec4(-1.5f, 0.0f, -5.0f, 1.0f),
+        .color = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f),
+        .linear = 0.22,
+        .quadratic = 0.2,
+    });
 
     return true;
 }
@@ -127,7 +153,7 @@ void update([[maybe_unused]] double time)
     ImGui::RadioButton("Orthographic", &g_state.projectionType, 1);
     
     int ui_id { 0 };
-    for (auto& obj : g_state.objects)
+    for (auto& obj : g_state.litObjects)
     {
         ImGui::PushID(ui_id++);
         
@@ -153,7 +179,7 @@ void update([[maybe_unused]] double time)
     
     ImGui::End();
 
-    for (auto& obj : g_state.objects)
+    for (auto& obj : g_state.litObjects)
     {
         if (obj.isAnimating)
         {
@@ -193,19 +219,75 @@ void render(const graphics::internal::FrameData& fd)
     }
     renderData.sceneUniform.proj[1][1] *= -1; // Y-axis for Vulkan
 
-    std::vector<graphics::core::RenderObjectData> renderObjects;
-    renderObjects.reserve(g_state.objects.size());
+    std::vector<graphics::core::RenderObjectData> renderLitObjects;
+    renderLitObjects.reserve(g_state.litObjects.size());
     
-    for (const auto& obj : g_state.objects)
+    for (const auto& obj : g_state.litObjects)
     {
-        renderObjects.push_back({
+        renderLitObjects.push_back({
+            .mesh  = obj.mesh,
             .modelMatrix = obj.transform.get_matrix(),
             .normalMatrix = obj.transform.get_normal_matrix(),
             .material = obj.material
         });
     }
-    
-    renderData.objects = renderObjects;
+
+    std::vector<graphics::core::RenderObjectData> renderUnlitObjects;
+    renderUnlitObjects.reserve(g_state.unlitObjects.size());
+
+    for (const auto& light : g_state.pointLights)
+    {
+        glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(light.position));
+        model = glm::scale(model, glm::vec3(0.2f));
+
+        Material unlitMat{};
+        unlitMat.albedo = light.color;
+
+        renderUnlitObjects.push_back({
+            .mesh = &g_engine->cubeMesh,
+            .modelMatrix = model,
+            .normalMatrix = glm::mat4(1.0f),
+            .material = unlitMat
+        });
+    }
+
+    std::vector<graphics::core::RenderObjectData> renderLineObjects;
+    for (const auto& light : g_state.spotLights)
+    {
+        glm::vec3 pos = glm::vec3(light.position);
+        glm::vec3 dir = glm::normalize(glm::vec3(light.direction));
+
+        // Математический трюк: glm::lookAt создает матрицу View (World -> Camera).
+        // Если взять её inverse(), мы получим матрицу Model (Camera -> World).
+        // Так как наш конус изначально сгенерирован смотрящим в -Z (как и камера),
+        // эта матрица идеально развернет конус в направлении вектора `dir`!
+        glm::vec3 up = std::abs(dir.y) < 0.999f ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0);
+        glm::mat4 model = glm::inverse(glm::lookAt(pos, pos + dir, up));
+
+        // Рассчитываем радиус конуса на основе угла свечения.
+        // light.outerCutoff - это косинус угла, берем arccos, чтобы получить угол в радианах.
+        float angle = std::acos(light.outerCutoff);
+        float length = 3.0f; // Длина визуализируемого луча
+        float radius = length * std::tan(angle); 
+        
+        // Масштабируем: X и Y - это радиус круга, Z - длина конуса
+        model = glm::scale(model, glm::vec3(radius, radius, length));
+
+        Material lineMat{};
+        lineMat.albedo = light.color; // Конус будет цвета самого прожектора
+
+        renderLineObjects.push_back({
+            .mesh = &g_engine->coneMesh, // Форма конуса!
+            .modelMatrix = model,
+            .normalMatrix = glm::mat4(1.0f),
+            .material = lineMat
+        });
+    }
+
+    renderData.litObjects = renderLitObjects;
+    renderData.unlitObjects = renderUnlitObjects;
+    renderData.lineObjects = renderLineObjects;
+
 
     g_engine->draw(fd.command_buffer, fd.framebuffer, renderData);
 }

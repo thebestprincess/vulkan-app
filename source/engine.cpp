@@ -1,4 +1,4 @@
-#include "graphics.hpp"
+#include "engine.hpp"
 #include "gpu_resources.hpp"
 #include "graphics_internal.hpp"
 #include "pipeline_builder.hpp"
@@ -38,21 +38,26 @@ void VulkanEngine::init_buffers()
         VMA_MEMORY_USAGE_AUTO
     );
 
-    vertexBuffer = Buffer::create(
+
+    cubeMesh.vertexBuffer = Buffer::create(
         allocator,
         sizeof(vertices),
         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
         VMA_MEMORY_USAGE_AUTO
     );
-    vertexBuffer.upload_data<Vertex>(allocator, vertices);
+    cubeMesh.vertexBuffer.upload_data<Vertex>(allocator, vertices);
 
-    indexBuffer = Buffer::create(
+    cubeMesh.indexBuffer = Buffer::create(
         allocator,
         sizeof(indices),
         VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
         VMA_MEMORY_USAGE_AUTO
     );
-    indexBuffer.upload_data<uint32_t>(allocator, indices);
+    cubeMesh.indexBuffer.upload_data<uint32_t>(allocator, indices);
+
+    cubeMesh.indexCount = sizeof(indices) / sizeof(indices[0]);
+
+    generate_cone_mesh();
 
     sceneUniformBuffer = Buffer::create(
         allocator,
@@ -93,15 +98,60 @@ void VulkanEngine::init_descriptors()
            .build(device, descriptorAllocator, objectSetLayout, dynamicObjectDescriptorSet);
 }
 
+void VulkanEngine::generate_cone_mesh()
+{
+    std::vector<Vertex> coneVerts;
+    std::vector<uint32_t> coneIndices;
+
+    coneVerts.push_back({glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f)}); 
+
+    const int segments { 16 };
+    for (int i = 0; i < segments; ++i)
+    {
+        float angle { static_cast<float>(i) / segments * 2.0f * glm::pi<float>() };
+        coneVerts.push_back({
+            glm::vec3(std::cos(angle), std::sin(angle), -1.0f), 
+            glm::vec3(0.0f)
+        });
+    }
+
+    for (int i = 1; i <= segments; ++i)
+    {
+        int next { (i % segments) + 1 };
+        coneIndices.push_back(0);
+        coneIndices.push_back(i);
+        coneIndices.push_back(i);
+        coneIndices.push_back(next);
+    }
+
+    coneMesh.vertexBuffer = Buffer::create(internal::context.allocator, coneVerts.size() * sizeof(Vertex), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_AUTO);
+    coneMesh.vertexBuffer.upload_data<Vertex>(internal::context.allocator, coneVerts);
+
+    coneMesh.indexBuffer = Buffer::create(internal::context.allocator, coneIndices.size() * sizeof(uint32_t), VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_AUTO);
+    coneMesh.indexBuffer.upload_data<uint32_t>(internal::context.allocator, std::span{coneIndices});
+
+    coneMesh.indexCount = coneIndices.size();
+}
+
+
+
 void VulkanEngine::init()
 {
     descriptorAllocator.init(graphics::internal::context.device);
     init_buffers();
     init_descriptors();
 
-    Shader vertShader(std::filesystem::current_path() / "shaders" / "lit_shader.vert.spv");
-    Shader fragShader(std::filesystem::current_path() / "shaders" / "lit_shader.frag.spv");
-    if (!vertShader.is_load() || !fragShader.is_load())
+    Shader litVertShader(std::filesystem::current_path() / "shaders" / "lit_shader.vert.spv");
+    Shader litFragShader(std::filesystem::current_path() / "shaders" / "lit_shader.frag.spv");
+    if (!litVertShader.is_load() || !litFragShader.is_load())
+    {
+        std::println(stderr, "ERROR: Failed to load shaders! Check your file paths.");
+        return;
+    }
+
+    Shader unlitVertShader(std::filesystem::current_path() / "shaders" / "unlit_shader.vert.spv");
+    Shader unlitFragShader(std::filesystem::current_path() / "shaders" / "unlit_shader.frag.spv");
+    if (!unlitVertShader.is_load() || !unlitFragShader.is_load())
     {
         std::println(stderr, "ERROR: Failed to load shaders! Check your file paths.");
         return;
@@ -141,9 +191,7 @@ void VulkanEngine::init()
     };
 
     PipelineBuilder builder;
-    builder.set_shaders(vertShader, fragShader).set_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
     builder._pipelineLayout = pipelineLayout;
-
     builder._vertexInputInfo = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
         .vertexBindingDescriptionCount = sizeof(bindingDesc) / sizeof(bindingDesc[0]),
@@ -151,17 +199,34 @@ void VulkanEngine::init()
         .vertexAttributeDescriptionCount = sizeof(attrDesc) / sizeof(attrDesc[0]),
         .pVertexAttributeDescriptions = attrDesc
     };
+    builder.set_shaders(litVertShader, litFragShader);
+    litPipeline = builder.build_pipeline(internal::context.device);
 
-    pipeline = builder.build_pipeline(internal::context.device);
+    builder.set_shaders(unlitVertShader, unlitFragShader);
+    unlitPipeline = builder.build_pipeline(internal::context.device);
+
+    builder.set_shaders(unlitVertShader, unlitFragShader)
+           .set_topology(VK_PRIMITIVE_TOPOLOGY_LINE_LIST)
+           .set_polygon_mode(VK_POLYGON_MODE_FILL); 
+    linePipeline = builder.build_pipeline(internal::context.device);
+    
 }
 
 void VulkanEngine::cleanup()
 {
     VkDevice device = graphics::internal::context.device;
 
-    if (pipeline != VK_NULL_HANDLE)
+    if (litPipeline != VK_NULL_HANDLE)
     {
-        vkDestroyPipeline(device, pipeline, nullptr);
+        vkDestroyPipeline(device, litPipeline, nullptr);
+    }
+    if (unlitPipeline != VK_NULL_HANDLE)
+    {
+        vkDestroyPipeline(device, unlitPipeline, nullptr);
+    }
+    if (linePipeline != VK_NULL_HANDLE)
+    {
+        vkDestroyPipeline(device, linePipeline, nullptr);
     }
 
     if (pipelineLayout != VK_NULL_HANDLE)
@@ -216,45 +281,65 @@ void VulkanEngine::draw(VkCommandBuffer cmd, VkFramebuffer framebuffer, const Fr
     vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
 
-    if (pipeline != VK_NULL_HANDLE)
+    if (litPipeline == VK_NULL_HANDLE || unlitPipeline == VK_NULL_HANDLE)
     {
+        vkCmdEndRenderPass(cmd);
+        vkEndCommandBuffer(cmd);
+        return;
+    }
+
+    VkViewport viewport
+    {
+        0.0f, 0.0f, 
+        (float)ctx.swapchain_extent.width, 
+        (float)ctx.swapchain_extent.height, 
+        0.0f, 1.0f
+    };
+    VkRect2D scissor
+    {
+        {0, 0},
+        ctx.swapchain_extent
+    };
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+
+    VmaAllocationInfo allocInfo;
+    vmaGetAllocationInfo(ctx.allocator, dynamicObjectBuffer.allocation, &allocInfo);
+    char* pMappedData { static_cast<char*>(allocInfo.pMappedData) };
+
+    size_t current_dynamic_index { 0uz };
+
+    auto draw_batch = [&](VkPipeline pipeline, std::span<const RenderObjectData> render_objects)
+    {
+        if (render_objects.empty()) { return; }
+
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
         
+        const Mesh* lastMesh = nullptr;
 
-        VkViewport viewport {
-            0.0f, 0.0f, 
-            (float)ctx.swapchain_extent.width, 
-            (float)ctx.swapchain_extent.height, 
-            0.0f, 1.0f
-        };
-        VkRect2D scissor {{0, 0}, ctx.swapchain_extent};
-
-        vkCmdSetViewport(cmd, 0, 1, &viewport);
-        vkCmdSetScissor(cmd, 0, 1, &scissor);
-
-
-
-        VkDeviceSize offset { 0 };
-        vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer.buffer, &offset);
-        vkCmdBindIndexBuffer(cmd, indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
-
-
-
-        VmaAllocationInfo allocInfo;
-        vmaGetAllocationInfo(ctx.allocator, dynamicObjectBuffer.allocation, &allocInfo);
-        char* pMappedData { static_cast<char*>(allocInfo.pMappedData) };
-
-        size_t objectCount { std::min(data.objects.size(), maxObjects) };
-        
-        for (size_t i { 0 }; i < objectCount; ++i)
+        for (const auto& obj : render_objects)
         {
-            ObjectUniform objUbo { data.objects[i].modelMatrix, data.objects[i].normalMatrix, data.objects[i].material };
-            std::memcpy(pMappedData + (i * dynamicAlignment), &objUbo, sizeof(ObjectUniform));
-        }
-        
-        for (size_t i { 0 }; i < objectCount; ++i)
-        {
-            uint32_t dynamicOffset = static_cast<uint32_t>(i * dynamicAlignment);
+            if (current_dynamic_index >= maxObjects) { break; }
+
+
+            if (lastMesh != obj.mesh)
+            {
+                VkDeviceSize offset { 0 };
+                vkCmdBindVertexBuffers(cmd, 0, 1, &obj.mesh->vertexBuffer.buffer, &offset);
+                vkCmdBindIndexBuffer(cmd, obj.mesh->indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+                lastMesh = obj.mesh;
+            }
+
+            ObjectUniform objUbo 
+            {
+                obj.modelMatrix,
+                obj.normalMatrix,
+                obj.material
+            };
+            std::memcpy(pMappedData + (current_dynamic_index * dynamicAlignment), &objUbo, sizeof(ObjectUniform));
+
+            uint32_t dynamicOffset { static_cast<uint32_t>(current_dynamic_index * dynamicAlignment) };
 
             VkDescriptorSet sets[] { sceneDescriptorSet, dynamicObjectDescriptorSet };
             vkCmdBindDescriptorSets(
@@ -267,10 +352,16 @@ void VulkanEngine::draw(VkCommandBuffer cmd, VkFramebuffer framebuffer, const Fr
                 1,                                  // (dynamicOffsetCount) Have only one for dynamicObjectBuffer
                 &dynamicOffset
             );
+            
+            vkCmdDrawIndexed(cmd, obj.mesh->indexCount, 1, 0, 0, 0);
 
-            vkCmdDrawIndexed(cmd, sizeof(indices) / sizeof(indices[0]), 1, 0, 0, 0);            
+            ++current_dynamic_index;
         }
-    }
+    };
+
+    draw_batch(litPipeline, data.litObjects);
+    draw_batch(unlitPipeline, data.unlitObjects);
+    draw_batch(linePipeline, data.lineObjects);
 
     vkCmdEndRenderPass(cmd);
     vkEndCommandBuffer(cmd);
