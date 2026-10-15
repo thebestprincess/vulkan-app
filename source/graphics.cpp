@@ -145,6 +145,24 @@ void PipelineBuilder::set_shaders(VkShaderModule vertexShader, VkShaderModule fr
 void VulkanEngine::init_buffers()
 {
     const auto& allocator = internal::context.allocator;    
+    const auto& ctx = internal::context;
+
+    VkPhysicalDeviceProperties properties;
+    vkGetPhysicalDeviceProperties(ctx.physical_device, &properties);
+    size_t minUboAlignment = properties.limits.minUniformBufferOffsetAlignment;
+
+    dynamicAlignment = sizeof(ObjectUniform);
+    if (minUboAlignment > 0)
+    {
+        dynamicAlignment = (dynamicAlignment + minUboAlignment - 1) & ~(minUboAlignment - 1);
+    }
+
+    dynamicObjectBuffer = Buffer::create(
+        ctx.allocator,
+        maxObjects * dynamicAlignment,
+        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+        VMA_MEMORY_USAGE_AUTO
+    );
 
     vertexBuffer = Buffer::create(
         allocator,
@@ -168,19 +186,6 @@ void VulkanEngine::init_buffers()
         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
         VMA_MEMORY_USAGE_AUTO
     ); 
-
-    objectUniformBuffer = Buffer::create(
-        allocator,
-        sizeof(ObjectUniform),
-        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-        VMA_MEMORY_USAGE_AUTO
-    );
-    object2UniformBuffer = Buffer::create(
-        allocator,
-        sizeof(ObjectUniform),
-        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-        VMA_MEMORY_USAGE_AUTO
-    );
 
     pointLightBuffer = Buffer::create(
         allocator, 
@@ -209,13 +214,9 @@ void VulkanEngine::init_descriptors()
            .bind_buffer(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, spotLightInfo)
            .build(device, descriptorAllocator, sceneSetLayout, sceneDescriptorSet);
 
-    VkDescriptorBufferInfo objInfo{objectUniformBuffer, 0, sizeof(ObjectUniform)};
-    builder.bind_buffer(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, objInfo)
-           .build(device, descriptorAllocator, objectSetLayout, objectDescriptorSet);
-
-    VkDescriptorBufferInfo obj2Info{object2UniformBuffer, 0, sizeof(ObjectUniform)};
-    builder.bind_buffer(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, obj2Info)
-           .build_existing_layout(device, descriptorAllocator, objectSetLayout, object2DescriptorSet);
+    VkDescriptorBufferInfo dynObjInfo { dynamicObjectBuffer, 0, sizeof(ObjectUniform) };
+    builder.bind_buffer(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, dynObjInfo)
+           .build(device, descriptorAllocator, objectSetLayout, dynamicObjectDescriptorSet);
 }
 
 void VulkanEngine::init()
@@ -359,29 +360,42 @@ void VulkanEngine::draw(VkCommandBuffer cmd, VkFramebuffer framebuffer, const Fr
         vkCmdSetScissor(cmd, 0, 1, &scissor);
 
 
+
         VkDeviceSize offset { 0 };
         vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer.buffer, &offset);
         vkCmdBindIndexBuffer(cmd, indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
 
 
 
-        VkDescriptorSet objectSets[] = { objectDescriptorSet, object2DescriptorSet };
-        VmaAllocation objectAllocations[] = { objectUniformBuffer.allocation, object2UniformBuffer.allocation };
+        VmaAllocationInfo allocInfo;
+        vmaGetAllocationInfo(ctx.allocator, dynamicObjectBuffer.allocation, &allocInfo);
+        char* pMappedData { static_cast<char*>(allocInfo.pMappedData) };
 
-        for (size_t i = 0; i < data.objects.size(); ++i)
+        size_t objectCount { std::min(data.objects.size(), maxObjects) };
+        
+        for (size_t i { 0 }; i < objectCount; ++i)
         {
-            if (i >= 2) break; 
+            ObjectUniform objUbo { data.objects[i].modelMatrix, data.objects[i].normalMatrix, data.objects[i].material };
+            std::memcpy(pMappedData + (i * dynamicAlignment), &objUbo, sizeof(ObjectUniform));
+        }
+        
+        for (size_t i { 0 }; i < objectCount; ++i)
+        {
+            uint32_t dynamicOffset = static_cast<uint32_t>(i * dynamicAlignment);
 
-            ObjectUniform objUbo{ data.objects[i].modelMatrix, data.objects[i].normalMatrix,{ data.objects[i].material } };
-            
-            VmaAllocationInfo objAllocInfo;
-            vmaGetAllocationInfo(ctx.allocator, objectAllocations[i], &objAllocInfo);
-            std::memcpy(objAllocInfo.pMappedData, &objUbo, sizeof(objUbo));
+            VkDescriptorSet sets[] { sceneDescriptorSet, dynamicObjectDescriptorSet };
+            vkCmdBindDescriptorSets(
+                cmd,
+                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                pipelineLayout,
+                0,                                  // first set
+                sizeof(sets) / sizeof(sets[0]),
+                sets,
+                1,                                  // (dynamicOffsetCount) Have only one for dynamicObjectBuffer
+                &dynamicOffset
+            );
 
-            VkDescriptorSet sets[] = { sceneDescriptorSet, objectSets[i] };
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 2, sets, 0, nullptr);
-            
-            vkCmdDrawIndexed(cmd, sizeof(indices) / sizeof(indices[0]), 1, 0, 0, 0);
+            vkCmdDrawIndexed(cmd, sizeof(indices) / sizeof(indices[0]), 1, 0, 0, 0);            
         }
     }
 

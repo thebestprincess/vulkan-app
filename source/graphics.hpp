@@ -67,6 +67,12 @@ public:
     Buffer vertexBuffer;
     Buffer indexBuffer;
 
+    static constexpr size_t maxObjects { 1000uz }; // number of objects on the scene simultaneously
+    size_t dynamicAlignment { 0uz };
+
+    Buffer dynamicObjectBuffer;
+    VkDescriptorSet dynamicObjectDescriptorSet;
+
     static constexpr size_t maxPointLights { 100uz };
     Buffer pointLightBuffer;
     static constexpr size_t maxSpotLights { 100uz };
@@ -74,12 +80,6 @@ public:
     
     Buffer sceneUniformBuffer;
     
-    Buffer objectUniformBuffer;
-    VkDescriptorSet objectDescriptorSet;
-
-    Buffer object2UniformBuffer;
-    VkDescriptorSet object2DescriptorSet;
-
     void init();
     void cleanup();
     void draw(VkCommandBuffer cmd, VkFramebuffer framebuffer, const FrameRenderData& data);
