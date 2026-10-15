@@ -136,27 +136,5 @@ private:
     void init_descriptors();
 };
 
-class PipelineBuilder final
-{
-public:
-    std::vector<VkPipelineShaderStageCreateInfo> _shaderStages;
-   
-    VkPipelineInputAssemblyStateCreateInfo _inputAssembly;
-    VkPipelineRasterizationStateCreateInfo _rasterizer;
-    VkPipelineColorBlendAttachmentState _colorBlendAttachment;
-    VkPipelineMultisampleStateCreateInfo _multisampling;
-    VkPipelineLayout _pipelineLayout;
-    VkPipelineDepthStencilStateCreateInfo _depthStencil;
-    VkPipelineVertexInputStateCreateInfo _vertexInputInfo;
-    VkFormat _colorAttachmentformat;
-
-	PipelineBuilder(){ setup(); }
-    VkPipeline build_pipeline(VkDevice device);
-    
-    void set_shaders(VkShaderModule vertexShader, VkShaderModule fragmentShader);
-
-private:
-    void setup();
-};
 
 } // namespace graphics::core

@@ -1,6 +1,7 @@
 #include "graphics.hpp"
 #include "gpu_resources.hpp"
 #include "graphics_internal.hpp"
+#include "pipeline_builder.hpp"
 #include "common.hpp"
 
 #include <cstdint>
@@ -14,133 +15,6 @@
 
 namespace graphics::core
 {
-
-void PipelineBuilder::setup()
-{
-    _inputAssembly = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 
-    };
-
-    _rasterizer = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-        .polygonMode = VK_POLYGON_MODE_FILL,
-        .cullMode = VK_CULL_MODE_FRONT_BIT,
-        .frontFace = VK_FRONT_FACE_CLOCKWISE,
-        .lineWidth = 1.0f,
-    };
-
-    _colorBlendAttachment = {
-        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
-                          VK_COLOR_COMPONENT_G_BIT |
-                          VK_COLOR_COMPONENT_B_BIT |
-                          VK_COLOR_COMPONENT_A_BIT,
-    };
-
-    _multisampling = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
-    };
-
-    _pipelineLayout = {};
-
-    _depthStencil = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-        .depthTestEnable = true,
-        .depthWriteEnable = true,
-        .depthCompareOp = VK_COMPARE_OP_LESS,
-    };
-
-    _shaderStages.clear();
-}
-
-VkPipeline PipelineBuilder::build_pipeline(VkDevice device)
-{
-    VkPipelineViewportStateCreateInfo viewportState
-    {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-        .pNext = nullptr,
-        .viewportCount = 1,
-        .scissorCount = 1,
-    };
-
-    VkPipelineColorBlendStateCreateInfo colorBlending
-    {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-        .pNext = nullptr,
-        .attachmentCount = 1,
-        .pAttachments = &_colorBlendAttachment,
-    };
-
-    VkDynamicState dynamic_states[]
-    {
-        VK_DYNAMIC_STATE_VIEWPORT,
-        VK_DYNAMIC_STATE_SCISSOR,
-    };
-    
-    VkPipelineDynamicStateCreateInfo dynamicInfo
-    {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-        .dynamicStateCount = sizeof(dynamic_states) / sizeof(dynamic_states[0]),
-        .pDynamicStates = dynamic_states,
-    };
-    
-    VkGraphicsPipelineCreateInfo pipelineInfo 
-    {
-        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-        .pNext = nullptr,
-        .stageCount = static_cast<uint32_t>(_shaderStages.size()),
-        .pStages = _shaderStages.data(),
-        .pVertexInputState = &_vertexInputInfo,
-        .pInputAssemblyState = &_inputAssembly,
-        .pViewportState = &viewportState,
-        .pRasterizationState = &_rasterizer,
-        .pMultisampleState = &_multisampling,
-        .pDepthStencilState = &_depthStencil,
-        .pColorBlendState = &colorBlending,
-        .pDynamicState = &dynamicInfo,
-        .layout = _pipelineLayout,
-        .renderPass = graphics::internal::context.render_pass,
-        .subpass = 0, 
-    };
-    
-    VkPipeline newPipeline;
-    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo,
-                                  nullptr, &newPipeline) != VK_SUCCESS)
-    {
-        std::println(stderr, "failed to create pipeline");
-        return VK_NULL_HANDLE;
-    }
-    else
-    {
-        return newPipeline;
-    }
-}
-
-void PipelineBuilder::set_shaders(VkShaderModule vertexShader, VkShaderModule fragmentShader)
-{
-    _shaderStages.clear();
-
-    _shaderStages.push_back(
-        VkPipelineShaderStageCreateInfo
-        {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            .stage = VK_SHADER_STAGE_VERTEX_BIT,
-            .module = std::move(vertexShader),
-            .pName = "main",
-        }
-    );
-
-    _shaderStages.push_back(
-        VkPipelineShaderStageCreateInfo
-        {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-            .module = std::move(fragmentShader), 
-            .pName = "main",
-        }
-    );
-}
 
 void VulkanEngine::init_buffers()
 {
@@ -225,8 +99,8 @@ void VulkanEngine::init()
     init_buffers();
     init_descriptors();
 
-    Shader vertShader(std::filesystem::current_path() / "shaders" / "shader.vert.spv");
-    Shader fragShader(std::filesystem::current_path() / "shaders" / "shader.frag.spv");
+    Shader vertShader(std::filesystem::current_path() / "shaders" / "lit_shader.vert.spv");
+    Shader fragShader(std::filesystem::current_path() / "shaders" / "lit_shader.frag.spv");
     if (!vertShader.is_load() || !fragShader.is_load())
     {
         std::println(stderr, "ERROR: Failed to load shaders! Check your file paths.");
@@ -267,7 +141,7 @@ void VulkanEngine::init()
     };
 
     PipelineBuilder builder;
-    builder.set_shaders(vertShader, fragShader);
+    builder.set_shaders(vertShader, fragShader).set_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
     builder._pipelineLayout = pipelineLayout;
 
     builder._vertexInputInfo = {
@@ -277,7 +151,6 @@ void VulkanEngine::init()
         .vertexAttributeDescriptionCount = sizeof(attrDesc) / sizeof(attrDesc[0]),
         .pVertexAttributeDescriptions = attrDesc
     };
-    builder._inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 
     pipeline = builder.build_pipeline(internal::context.device);
 }

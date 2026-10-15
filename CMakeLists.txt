@@ -9,6 +9,7 @@ add_executable(${PROJECT_NAME}
 	source/application.cpp
 	source/graphics.cpp
 	source/gpu_resources.cpp
+	source/pipeline_builder.cpp
 )
 
 if(LINUX)
@@ -118,8 +119,10 @@ if(GLSLC_FOUND)
 	# To compile shader file, use compile_shader function with a file name
 	# of a shader inside shaders directory. See example below:
 
-	compile_shader(shader.vert)
-	compile_shader(shader.frag)
+	compile_shader(lit_shader.vert)
+	compile_shader(lit_shader.frag)
+	compile_shader(unlit_shader.vert)
+	compile_shader(unlit_shader.frag)
 
 	add_custom_target(shaders DEPENDS ${_SHADER_BINARIES})
 	add_dependencies(${PROJECT_NAME} shaders)
