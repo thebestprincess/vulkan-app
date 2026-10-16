@@ -58,6 +58,7 @@ void VulkanEngine::init_buffers()
     cubeMesh.indexCount = sizeof(indices) / sizeof(indices[0]);
 
     generate_cone_mesh();
+    generate_plane_mesh();
 
     sceneUniformBuffer = Buffer::create(
         allocator,
@@ -124,15 +125,57 @@ void VulkanEngine::generate_cone_mesh()
         coneIndices.push_back(next);
     }
 
-    coneMesh.vertexBuffer = Buffer::create(internal::context.allocator, coneVerts.size() * sizeof(Vertex), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_AUTO);
-    coneMesh.vertexBuffer.upload_data<Vertex>(internal::context.allocator, coneVerts);
+    auto& alloc = internal::context.allocator;
 
-    coneMesh.indexBuffer = Buffer::create(internal::context.allocator, coneIndices.size() * sizeof(uint32_t), VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_AUTO);
-    coneMesh.indexBuffer.upload_data<uint32_t>(internal::context.allocator, std::span{coneIndices});
+    coneMesh.vertexBuffer = Buffer::create(
+        alloc,
+        coneVerts.size() * sizeof(Vertex),
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        VMA_MEMORY_USAGE_AUTO
+    );
+    coneMesh.vertexBuffer.upload_data<Vertex>(alloc, coneVerts);
+
+    coneMesh.indexBuffer = Buffer::create(
+        alloc,
+        coneIndices.size() * sizeof(uint32_t),
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        VMA_MEMORY_USAGE_AUTO
+    );
+    coneMesh.indexBuffer.upload_data<uint32_t>(alloc, std::span{coneIndices});
 
     coneMesh.indexCount = coneIndices.size();
 }
 
+void VulkanEngine::generate_plane_mesh()
+{
+    const std::array<Vertex, 4> planeVerts = {
+        Vertex{{-0.5f, 0.0f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+        Vertex{{ 0.5f, 0.0f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+        Vertex{{ 0.5f, 0.0f,  0.5f}, {0.0f, 1.0f, 0.0f}},
+        Vertex{{-0.5f, 0.0f,  0.5f}, {0.0f, 1.0f, 0.0f}}
+    };
+    const std::array<uint32_t, 6> planeIndices = { 0, 2, 1, 2, 0, 3 };
+
+    auto& alloc = internal::context.allocator;
+
+    planeMesh.vertexBuffer = Buffer::create(
+        alloc,
+        sizeof(planeVerts),
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        VMA_MEMORY_USAGE_AUTO
+    );
+    planeMesh.vertexBuffer.upload_data<Vertex>(alloc, planeVerts);
+
+    planeMesh.indexBuffer = Buffer::create(
+        alloc,
+        sizeof(planeIndices),
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        VMA_MEMORY_USAGE_AUTO
+    );
+    planeMesh.indexBuffer.upload_data<uint32_t>(alloc, planeIndices);
+
+    planeMesh.indexCount = planeIndices.size();
+}
 
 
 void VulkanEngine::init()

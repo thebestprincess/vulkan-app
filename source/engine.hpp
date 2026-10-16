@@ -30,6 +30,7 @@ public:
     
     Mesh cubeMesh;
     Mesh coneMesh;
+    Mesh planeMesh;
 
     static constexpr size_t maxObjects { 1000uz }; // number of objects on the scene simultaneously
     size_t dynamicAlignment { 0uz };
@@ -54,6 +55,7 @@ private:
     void init_buffers();
     void init_descriptors();
     void generate_cone_mesh();
+    void generate_plane_mesh();
 };
 
 
