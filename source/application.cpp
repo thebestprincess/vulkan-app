@@ -93,48 +93,221 @@ struct AppState
 } g_state;
 
 
+namespace {
+
+Material make_material(glm::vec4 albedo, glm::vec4 specular, float shininess) {
+    return Material{
+        .albedo        = albedo,
+        .specularColor = specular,
+        .shininess     = shininess,
+    };
+}
+
+AppObject make_plane(
+    std::string name,
+    const graphics::core::Mesh* mesh,
+    glm::vec3 position,
+    glm::vec3 rotation,
+    glm::vec3 scale,
+    Material  material
+) {
+    return AppObject{
+        .name      = std::move(name),
+        .mesh      = mesh,
+        .transform = { .position = position, .rotation = rotation, .scale = scale },
+        .material  = material,
+    };
+}
+
+} // namespace
+
+
 bool initialize()
 {
     g_engine = std::make_unique<graphics::core::VulkanEngine>();
     g_engine->init();
 
+    const auto* plane = &g_engine->planeMesh;
+    const auto* cube  = &g_engine->cubeMesh;
+
+    g_state.camera.position = { 3.8f,  2.4f,  3.8f };
+    g_state.camera.yaw      = -135.0f;
+    g_state.camera.pitch    = -12.0f;
+    g_state.camera.fovy     = glm::radians(50.0f);
+
+    g_state.litObjects.push_back(make_plane(
+        "Floor", plane,
+        { 0.0f, 0.0f,  0.0f },
+        { 0.0f, 0.0f,  0.0f },
+        { 10.0f, 1.0f, 10.0f },
+        make_material({ 0.20f, 0.13f, 0.08f, 1.0f },
+                      { 0.55f, 0.45f, 0.35f, 1.0f },
+                      96.0f)
+    ));
+
+    g_state.litObjects.push_back(make_plane(
+        "Back Wall", plane,
+        { 0.0f, 2.5f, -5.0f },
+        { 90.0f, 0.0f, 0.0f },
+        { 10.0f, 1.0f, 5.0f },
+        make_material({ 0.32f, 0.28f, 0.26f, 1.0f },
+                      { 0.10f, 0.10f, 0.10f, 1.0f },
+                      8.0f)
+    ));
+
+    g_state.litObjects.push_back(make_plane(
+        "Left Wall", plane,
+        { -5.0f, 2.5f, 0.0f },
+        { 0.0f, 0.0f, -90.0f },
+        { 5.0f, 1.0f, 10.0f },
+        make_material({ 0.42f, 0.34f, 0.28f, 1.0f },
+                      { 0.10f, 0.10f, 0.10f, 1.0f },
+                      8.0f)
+    ));
+
+    g_state.litObjects.push_back(make_plane(
+        "Right Wall", plane,
+        { 5.0f, 2.5f, 0.0f },
+        { 0.0f, 0.0f, 90.0f },
+        { 5.0f, 1.0f, 10.0f },
+        make_material({ 0.28f, 0.30f, 0.34f, 1.0f },
+                      { 0.10f, 0.10f, 0.10f, 1.0f },
+                      8.0f)
+    ));
+
+    
+
+
     g_state.litObjects.push_back({
-        .name = "Cube 1",
-        .mesh = &g_engine->cubeMesh,
-        .transform = { .position = {0.0f, 0.0f, -5.0f} },
-        .material = {
-            .albedo = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f),
-            .specularColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f),
-            .shininess = 50.0f
-        }
+        .name = "Hero Cube",
+        .mesh = cube,
+        .transform = {
+            .position = { -2.6f, 0.75f, -2.6f },
+            .rotation = { 0.0f, 35.0f, 0.0f },
+            .scale    = { 1.5f, 1.5f, 1.5f }
+        },
+        .material = make_material(
+            { 0.85f, 0.62f, 0.30f, 1.0f },
+            { 1.00f, 0.95f, 0.80f, 1.0f },
+            128.0f)
     });
 
     g_state.litObjects.push_back({
-        .name = "Cube 2",
-        .mesh = &g_engine->cubeMesh,
-        .transform = { .position = {1.5f, 0.0f, -5.0f} },
-        .material = {
-            .albedo = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f),
-            .specularColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f),
-            .shininess = 50.0f
-        }
+        .name = "Spinner",
+        .mesh = cube,
+        .transform = {
+            .position = { -1.0f, 0.35f, -1.0f },
+            .rotation = { 0.0f, 0.0f, 0.0f },
+            .scale    = { 0.7f, 0.7f, 0.7f }
+        },
+        .material = make_material(
+            { 0.75f, 0.18f, 0.15f, 1.0f },
+            { 1.00f, 0.90f, 0.90f, 1.0f },
+            96.0f),
+        .isAnimating = true,
+        .animSpeed   = 0.8f,
+        .animRadius  = 1.3f,
+    });
+
+    g_state.litObjects.push_back({
+        .name = "Blue Cube",
+        .mesh = cube,
+        .transform = {
+            .position = { 2.8f, 0.5f, -1.8f },
+            .rotation = { 0.0f, 20.0f, 0.0f },
+            .scale    = { 1.0f, 1.0f, 1.0f }
+        },
+        .material = make_material(
+            { 0.18f, 0.32f, 0.65f, 1.0f },
+            { 0.85f, 0.90f, 1.00f, 1.0f },
+            96.0f)
+    });
+
+    g_state.litObjects.push_back(make_plane(
+        "Painting", plane,
+        { -2.5f, 2.6f, -4.97f },
+        { 90.0f, 0.0f, 0.0f },
+        { 2.2f, 1.0f, 1.6f },
+        make_material({ 0.55f, 0.42f, 0.30f, 1.0f },
+                      { 0.05f, 0.05f, 0.05f, 1.0f },
+                      4.0f)
+    ));
+
+    
+
+    g_state.ambientLight = { 0.03f, 0.03f, 0.05f, 1.0f };
+
+    g_state.dirLightDir   = { 0.4f, -1.0f, 0.5f, 0.0f };
+    g_state.dirLightColor = { 0.06f, 0.09f, 0.16f, 1.0f };
+
+    
+
+    g_state.spotLights.push_back({
+        .position    = { -2.6f, 4.7f, -2.6f, 1.0f },
+        .direction   = { 0.0f, -1.0f, 0.0f, 0.0f },
+        .color       = { 1.00f, 0.80f, 0.45f, 1.5f },
+        .innerCutoff = glm::cos(glm::radians(20.0f)),
+        .outerCutoff = glm::cos(glm::radians(30.0f)),
+        .linear      = 0.07f,
+        .quadratic   = 0.017f
     });
 
     g_state.spotLights.push_back({
-        .position = glm::vec4(0.0f, 2.0f, 0.0f, 1.0f),
-        .direction = glm::vec4(0.0f, -1.0f, 0.0f, 1.0f),
-        .color = glm::vec4(1.0f, 1.0f, 0.0f, 1.0f),
+        .position    = { 0.5f, 3.5f, 0.5f, 1.0f },
+        .direction   = glm::normalize(glm::vec4(-3.1f, -2.5f, -3.1f, 0.0f)),
+        .color       = { 0.35f, 0.55f, 1.00f, 1.3f },
         .innerCutoff = glm::cos(glm::radians(15.0f)),
-        .outerCutoff = glm::cos(glm::radians(40.0f)),
-        .linear = 0.045,
-        .quadratic = 0.0075,
+        .outerCutoff = glm::cos(glm::radians(25.0f)),
+        .linear      = 0.09f,
+        .quadratic   = 0.03f
+    });
+
+    g_state.spotLights.push_back({
+        .position    = { -2.5f, 4.5f, -1.5f, 1.0f },
+        .direction   = glm::normalize(glm::vec4(0.0f, -2.0f, -3.5f, 0.0f)),
+        .color       = { 1.00f, 0.92f, 0.75f, 1.0f },
+        .innerCutoff = glm::cos(glm::radians(22.0f)),
+        .outerCutoff = glm::cos(glm::radians(32.0f)),
+        .linear      = 0.05f,
+        .quadratic   = 0.012f
+    });
+
+    g_state.spotLights.push_back({
+        .position    = { 2.8f, 3.8f, 0.0f, 1.0f },
+        .direction   = glm::normalize(glm::vec4(0.0f, -1.0f, -0.6f, 0.0f)),
+        .color       = { 0.30f, 0.55f, 1.00f, 1.1f },
+        .innerCutoff = glm::cos(glm::radians(18.0f)),
+        .outerCutoff = glm::cos(glm::radians(28.0f)),
+        .linear      = 0.09f,
+        .quadratic   = 0.028f
     });
 
     g_state.pointLights.push_back({
-        .position = glm::vec4(-1.5f, 0.0f, -5.0f, 1.0f),
-        .color = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f),
-        .linear = 0.22,
-        .quadratic = 0.2,
+        .position  = { 3.8f, 0.4f, 3.8f, 1.0f },
+        .color     = { 1.00f, 0.42f, 0.12f, 1.1f },
+        .linear    = 0.14f,
+        .quadratic = 0.07f
+    });
+
+    g_state.pointLights.push_back({
+        .position  = { -3.8f, 0.4f, 3.8f, 1.0f },
+        .color     = { 0.15f, 0.42f, 1.00f, 1.0f },
+        .linear    = 0.14f,
+        .quadratic = 0.07f
+    });
+
+    g_state.pointLights.push_back({
+        .position  = { 1.5f, 0.35f, -4.2f, 1.0f },
+        .color     = { 0.85f, 0.20f, 0.55f, 1.0f },
+        .linear    = 0.12f,
+        .quadratic = 0.05f
+    });
+
+    g_state.pointLights.push_back({
+        .position  = { -0.6f, 0.12f, -3.6f, 1.0f },
+        .color     = { 1.00f, 0.70f, 0.35f, 0.9f },
+        .linear    = 0.35f,
+        .quadratic = 0.44f
     });
 
     return true;
