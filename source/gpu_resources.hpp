@@ -104,9 +104,7 @@ public:
 
     void init(VkDevice device);
     void cleanup();
-    
     void reset_pools();
-
     bool allocate(VkDescriptorSet& set, VkDescriptorSetLayout layout);
 
 private:
@@ -116,7 +114,10 @@ private:
     std::vector<VkDescriptorPool> usedPools;
     std::vector<VkDescriptorPool> freePools;
 
-    VkDescriptorPool create_pool(uint32_t count, VkDescriptorPoolCreateFlags flags);
+    VkDescriptorPool create_pool(
+        uint32_t count,
+        VkDescriptorPoolCreateFlags flags
+    );
     VkDescriptorPool grab_pool();
 };
 
@@ -126,7 +127,8 @@ class DescriptorBuilder final
     std::vector<VkDescriptorSetLayoutBinding> bindings_;
     std::vector<VkWriteDescriptorSet> writes_;
 
-    std::deque<VkDescriptorBufferInfo> bufferInfos_;
+    // Using a deque to prevent invalidation caused by reallocation
+    std::deque<VkDescriptorBufferInfo> bufferInfos_; 
     std::deque<VkDescriptorImageInfo> imageInfos_;
 
 public:
