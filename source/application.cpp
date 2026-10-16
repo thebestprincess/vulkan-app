@@ -27,6 +27,8 @@ public:
     float yaw { -90.0f };
     float pitch { 0.0f };
     float fovy { glm::radians(45.0f) };
+    float movement_speed { 5.0f };
+    float turn_speed { 60.0f };
 
     glm::mat4 get_view_matrix() const
     {
@@ -332,7 +334,7 @@ void update(double time)
 
     if (!io.WantCaptureKeyboard) // Camera motion (WASD + QE + Arrows | Shift - acceleration)
     {
-        float cameraSpeed { 5.0f * dt };
+        float cameraSpeed { g_state.camera.movement_speed * dt };
         if (ImGui::IsKeyDown(ImGuiKey_LeftShift)) cameraSpeed *= 3.0f;
 
         glm::vec3 front;
@@ -351,7 +353,7 @@ void update(double time)
         if (ImGui::IsKeyDown(ImGuiKey_E)) g_state.camera.position += up * cameraSpeed;
         if (ImGui::IsKeyDown(ImGuiKey_Q)) g_state.camera.position -= up * cameraSpeed;
         
-        float rotSpeed { 60.0f * dt };
+        float rotSpeed { g_state.camera.turn_speed * dt };
         if (ImGui::IsKeyDown(ImGuiKey_LeftArrow))  g_state.camera.yaw   -= rotSpeed;
         if (ImGui::IsKeyDown(ImGuiKey_RightArrow)) g_state.camera.yaw   += rotSpeed;
         if (ImGui::IsKeyDown(ImGuiKey_UpArrow))    g_state.camera.pitch += rotSpeed;
@@ -366,6 +368,14 @@ void update(double time)
     ImGui::Text("Press ARROWS to look around.");
     ImGui::Text("WASD - motion | QE - Up/Down | SHIFT - acceleration");
     ImGui::Separator();
+
+	if (ImGui::CollapsingHeader("Camera"))
+    {
+		ImGui::TextUnformatted("WASD: move  |  Space/Ctrl: up/down  |  arrows: look");
+		ImGui::SliderFloat("Movement speed", &g_state.camera.movement_speed, 0.5f, 12.0f);
+		ImGui::SliderFloat("Turn speed", &g_state.camera.turn_speed, 20.0f, 180.0f);
+		ImGui::SliderFloat("Field of view", &g_state.camera.fovy, 0.349055f, 2.0f);
+	}
 
     if (ImGui::CollapsingHeader("Global Lighting"))
     {
