@@ -92,6 +92,9 @@ struct AppState
     std::vector<AppObject> litObjects;
     std::vector<AppObject> unlitObjects;
     std::vector<AppObject> lineObjects;
+
+    bool show_point_lights { true }; 
+    bool show_spot_lights { true };
 } g_state;
 
 
@@ -371,7 +374,6 @@ void update(double time)
 
 	if (ImGui::CollapsingHeader("Camera"))
     {
-		ImGui::TextUnformatted("WASD: move  |  Space/Ctrl: up/down  |  arrows: look");
 		ImGui::SliderFloat("Movement speed", &g_state.camera.movement_speed, 0.5f, 12.0f);
 		ImGui::SliderFloat("Turn speed", &g_state.camera.turn_speed, 20.0f, 180.0f);
 		ImGui::SliderFloat("Field of view", &g_state.camera.fovy, 0.349055f, 2.0f);
@@ -384,6 +386,8 @@ void update(double time)
         ImGui::Text("Directional Light");
         ImGui::SliderFloat3("Direction", glm::value_ptr(g_state.dirLightDir), -1.0f, 1.0f);
         ImGui::ColorEdit3("Dir Color", glm::value_ptr(g_state.dirLightColor));
+        if (ImGui::Button("Show spot lights")) { g_state.show_spot_lights = !g_state.show_spot_lights; }
+        if (ImGui::Button("Show point lights")) { g_state.show_point_lights = !g_state.show_point_lights; }
     }
 
     if (ImGui::CollapsingHeader("Point Lights"))
@@ -512,8 +516,8 @@ void render(const graphics::internal::FrameData& fd)
         .ambientLight = glm::vec4(g_state.ambientLight),
         .dirLightDir = glm::vec4(g_state.dirLightDir),
         .dirLightColor = glm::vec4(g_state.dirLightColor),
-        .pointLightCount = static_cast<uint32_t>(g_state.pointLights.size()),
-        .spotLightCount = static_cast<uint32_t>(g_state.spotLights.size()),
+        .pointLightCount = g_state.show_point_lights ? static_cast<uint32_t>(g_state.pointLights.size()) : static_cast<uint32_t>(0),
+        .spotLightCount = g_state.show_spot_lights ? static_cast<uint32_t>(g_state.spotLights.size()) : static_cast<uint32_t>(0),
     };
 
     float aspect = static_cast<float>(context.swapchain_extent.width) / static_cast<float>(context.swapchain_extent.height);
@@ -541,60 +545,83 @@ void render(const graphics::internal::FrameData& fd)
     }
 
     std::vector<graphics::core::RenderObjectData> renderUnlitObjects;
-    renderUnlitObjects.reserve(g_state.unlitObjects.size());
-
-    for (const auto& light : g_state.pointLights)
+    
+    if (g_state.show_point_lights)
     {
-        glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(light.position));
-        model = glm::scale(model, glm::vec3(0.2f));
+        renderUnlitObjects.reserve(g_state.unlitObjects.size());
 
-        Material unlitMat{};
-        unlitMat.albedo = light.color;
+        for (const auto& light : g_state.pointLights)
+        {
+            glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(light.position));
+            model = glm::scale(model, glm::vec3(0.2f));
 
-        renderUnlitObjects.push_back({
-            .mesh = &g_engine->cubeMesh,
-            .modelMatrix = model,
-            .normalMatrix = glm::mat4(1.0f),
-            .material = unlitMat
-        });
+            Material unlitMat{};
+            unlitMat.albedo = light.color;
+
+            renderUnlitObjects.push_back({
+                .mesh = &g_engine->cubeMesh,
+                .modelMatrix = model,
+                .normalMatrix = glm::mat4(1.0f),
+                .material = unlitMat
+            });
+        }
     }
 
     std::vector<graphics::core::RenderObjectData> renderLineObjects;
-    for (const auto& light : g_state.spotLights)
+    if (g_state.show_spot_lights)
     {
-        glm::vec3 pos = glm::vec3(light.position);
-        glm::vec3 dir = glm::normalize(glm::vec3(light.direction));
+        for (const auto& light : g_state.spotLights)
+        {
+            glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(light.position));
+            model = glm::scale(model, glm::vec3(0.2f));
 
-        glm::vec3 up = std::abs(dir.y) < 0.999f ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0);
-        glm::mat4 model = glm::inverse(glm::lookAt(pos, pos + dir, up));
+            Material unlitMat{};
+            unlitMat.albedo = light.color;
 
-        float outerAngle = std::acos(light.outerCutoff);
-        float outerLength = 3.0f;
-        float outerRadius = outerLength * std::tan(outerAngle); 
-
-        float innerAngle = std::acos(light.innerCutoff);
-        float innerLength = 3.0f;
-        float innerRadius = innerLength * std::tan(innerAngle);
+            renderUnlitObjects.push_back({
+                .mesh = &g_engine->cubeMesh,
+                .modelMatrix = model,
+                .normalMatrix = glm::mat4(1.0f),
+                .material = unlitMat
+            });
+        }
         
-        glm::mat4 outerModel = glm::scale(model, glm::vec3(outerRadius, outerRadius, outerLength));
-        glm::mat4 innerModel = glm::scale(model, glm::vec3(innerRadius, innerRadius, innerLength));
+        for (const auto& light : g_state.spotLights)
+        {
+            glm::vec3 pos = glm::vec3(light.position);
+            glm::vec3 dir = glm::normalize(glm::vec3(light.direction));
 
-        Material lineMat{};
-        lineMat.albedo = light.color;
+            glm::vec3 up = std::abs(dir.y) < 0.999f ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0);
+            glm::mat4 model = glm::inverse(glm::lookAt(pos, pos + dir, up));
 
-        renderLineObjects.push_back({
-            .mesh = &g_engine->coneMesh,
-            .modelMatrix = outerModel,
-            .normalMatrix = glm::mat4(1.0f),
-            .material = lineMat
-        });
+            float outerAngle = std::acos(light.outerCutoff);
+            float outerLength = 3.0f;
+            float outerRadius = outerLength * std::tan(outerAngle); 
 
-        renderLineObjects.push_back({
-            .mesh = &g_engine->coneMesh,
-            .modelMatrix = innerModel,
-            .normalMatrix = glm::mat4(1.0f),
-            .material = lineMat
-        });
+            float innerAngle = std::acos(light.innerCutoff);
+            float innerLength = 3.0f;
+            float innerRadius = innerLength * std::tan(innerAngle);
+            
+            glm::mat4 outerModel = glm::scale(model, glm::vec3(outerRadius, outerRadius, outerLength));
+            glm::mat4 innerModel = glm::scale(model, glm::vec3(innerRadius, innerRadius, innerLength));
+
+            Material lineMat{};
+            lineMat.albedo = light.color;
+
+            renderLineObjects.push_back({
+                .mesh = &g_engine->coneMesh,
+                .modelMatrix = outerModel,
+                .normalMatrix = glm::mat4(1.0f),
+                .material = lineMat
+            });
+
+            renderLineObjects.push_back({
+                .mesh = &g_engine->coneMesh,
+                .modelMatrix = innerModel,
+                .normalMatrix = glm::mat4(1.0f),
+                .material = lineMat
+            });
+        }
     }
 
     renderData.litObjects = renderLitObjects;
@@ -602,7 +629,6 @@ void render(const graphics::internal::FrameData& fd)
     renderData.lineObjects = renderLineObjects;
     renderData.pointLights = g_state.pointLights;
     renderData.spotLights  = g_state.spotLights;
-
 
     g_engine->draw(fd.command_buffer, fd.framebuffer, renderData);
 }
