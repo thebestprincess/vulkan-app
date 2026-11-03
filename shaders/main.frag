@@ -7,6 +7,7 @@
 
 layout(location = 0) in vec3 fragPos;
 layout(location = 1) in vec3 fragNormal;
+layout(location = 2) in vec2 fragUV;
 
 layout(location = 0) out vec4 outColor;
 
@@ -18,15 +19,27 @@ layout(std430, set = 0, binding = 2) readonly buffer SpotLightBuffer {
     SpotLight spotLights[];
 };
 
+layout(push_constant) uniform PushConstants {
+    uint isUnlit;                 // 1 - unlit, 0 - lit 
+    float time;                   // For non-trivial sampling
+    uint enableComplexSampling;
+} pc;
+
 void main() {
+    vec3 albedo = object.albedo.rgb;
+    if (pc.isUnlit == 1) {
+        outColor = vec4(albedo, 1.0);
+        return;
+    }
+
     vec3 N = normalize(fragNormal);
     vec3 V = normalize(scene.cameraPos.xyz - fragPos);
 
-    vec3 finalColor = scene.ambientLight.rgb * object.albedo.rgb;
+    vec3 finalColor = scene.ambientLight.rgb * albedo;
 
     vec3 L_dir = normalize(-scene.dirLightDir.xyz);
     float diff_dir = max(dot(N, L_dir), 0.0);
-    vec3 diffuse_dir = diff_dir * object.albedo.rgb * scene.dirLightColor.rgb;
+    vec3 diffuse_dir = diff_dir * albedo * scene.dirLightColor.rgb;
     
     vec3 H_dir = normalize(L_dir + V);
     float spec_dir = pow(max(dot(N, H_dir), 0.0), object.shininess);
@@ -47,7 +60,7 @@ void main() {
                                    light.quadratic * dist * dist); 
 
         float diff = max(dot(N, L), 0.0);
-        vec3 diffuse = diff * object.albedo.rgb * light.color.rgb;
+        vec3 diffuse = diff * albedo * light.color.rgb;
 
         vec3 H = normalize(L + V);
         float specFactor = pow(max(dot(N, H), 0.0), object.shininess);
@@ -73,7 +86,7 @@ void main() {
         if (angularAttenuation < 1e-9) { continue; }
 
         float diff = max(dot(N, L), 0.0);
-        vec3 diffuse = diff * object.albedo.rgb * light.color.rgb * angularAttenuation;
+        vec3 diffuse = diff * albedo * light.color.rgb * angularAttenuation;
 
         vec3 H = normalize(L + V);
         float specFactor = pow(max(dot(N, H), 0.0), object.shininess);

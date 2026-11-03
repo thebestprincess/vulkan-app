@@ -18,8 +18,7 @@ public:
     ~VulkanEngine();
 
 public:
-    VkPipeline litPipeline;
-    VkPipeline unlitPipeline;
+    VkPipeline mainPipeline;
     VkPipeline linePipeline;
     VkPipelineLayout pipelineLayout;
 

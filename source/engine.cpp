@@ -4,10 +4,10 @@
 #include "pipeline_builder.hpp"
 #include "common.hpp"
 
-#include <cstdint>
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan_core.h>
 
+#include <cstdint>
 #include <cstddef>
 #include <cstring>
 #include <print>
@@ -20,7 +20,13 @@ void generate_cone_mesh(Mesh& mesh)
     std::vector<Vertex> coneVerts;
     std::vector<uint32_t> coneIndices;
 
-    coneVerts.push_back({glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f)}); 
+    coneVerts.push_back(
+        {
+            glm::vec3(0.0f, 0.0f, 0.0f),
+            glm::vec3(0.0f),
+            glm::vec2(0.0f)
+        }
+    ); 
 
     const int segments { 16 };
     for (int i = 0; i < segments; ++i)
@@ -28,7 +34,8 @@ void generate_cone_mesh(Mesh& mesh)
         float angle { static_cast<float>(i) / segments * 2.0f * glm::pi<float>() };
         coneVerts.push_back({
             glm::vec3(std::cos(angle), std::sin(angle), -1.0f), 
-            glm::vec3(0.0f)
+            glm::vec3(0.0f),
+            glm::vec2(0.0f)
         });
     }
 
@@ -65,10 +72,10 @@ void generate_cone_mesh(Mesh& mesh)
 void generate_plane_mesh(Mesh& mesh)
 {
     const std::array<Vertex, 4> planeVerts = {
-        Vertex{{-0.5f, 0.0f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-        Vertex{{ 0.5f, 0.0f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-        Vertex{{ 0.5f, 0.0f,  0.5f}, {0.0f, 1.0f, 0.0f}},
-        Vertex{{-0.5f, 0.0f,  0.5f}, {0.0f, 1.0f, 0.0f}}
+        Vertex{{-0.5f, 0.0f, -0.5f}, {0.0f, 1.0f, 0.0f}, glm::vec2(0.0f)},
+        Vertex{{ 0.5f, 0.0f, -0.5f}, {0.0f, 1.0f, 0.0f}, glm::vec2(0.0f)},
+        Vertex{{ 0.5f, 0.0f,  0.5f}, {0.0f, 1.0f, 0.0f}, glm::vec2(0.0f)},
+        Vertex{{-0.5f, 0.0f,  0.5f}, {0.0f, 1.0f, 0.0f}, glm::vec2(0.0f)}
     };
     const std::array<uint32_t, 6> planeIndices = { 0, 2, 1, 2, 0, 3 };
 
@@ -190,28 +197,29 @@ void VulkanEngine::init()
     init_buffers();
     init_descriptors();
 
-    Shader litVertShader(std::filesystem::current_path() / "shaders" / "lit_shader.vert.spv");
-    Shader litFragShader(std::filesystem::current_path() / "shaders" / "lit_shader.frag.spv");
-    if (!litVertShader.is_load() || !litFragShader.is_load())
+    Shader mainVertShader(std::filesystem::current_path() / "shaders" / "main.vert.spv");
+    Shader mainFragShader(std::filesystem::current_path() / "shaders" / "main.frag.spv");
+    if (!mainVertShader.is_load() || !mainFragShader.is_load())
     {
         std::println(stderr, "ERROR: Failed to load shaders! Check your file paths.");
         return;
     }
 
-    Shader unlitVertShader(std::filesystem::current_path() / "shaders" / "unlit_shader.vert.spv");
-    Shader unlitFragShader(std::filesystem::current_path() / "shaders" / "unlit_shader.frag.spv");
-    if (!unlitVertShader.is_load() || !unlitFragShader.is_load())
+    VkPushConstantRange pushConstantRange
     {
-        std::println(stderr, "ERROR: Failed to load shaders! Check your file paths.");
-        return;
-    }
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, // TODO: vertex_bit?
+        .offset = 0,
+        .size = sizeof(PushConstants)
+    };
 
     VkDescriptorSetLayout layouts[] { sceneSetLayout, objectSetLayout };
     VkPipelineLayoutCreateInfo layoutInfo
     {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .setLayoutCount = 2,
-        .pSetLayouts = layouts
+        .pSetLayouts = layouts,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &pushConstantRange
     };
     vkCreatePipelineLayout(internal::context.device, &layoutInfo, nullptr, &pipelineLayout);
 
@@ -223,7 +231,7 @@ void VulkanEngine::init()
             .inputRate = VK_VERTEX_INPUT_RATE_VERTEX
         }
     };
-    VkVertexInputAttributeDescription attrDesc[2]
+    VkVertexInputAttributeDescription attrDesc[3]
     {
         {
             .location = 0,
@@ -236,6 +244,12 @@ void VulkanEngine::init()
             .binding = 0,
             .format = VK_FORMAT_R32G32B32_SFLOAT,
             .offset = offsetof(Vertex, normal)
+        },
+        {
+            .location = 2,
+            .binding = 0,
+            .format = VK_FORMAT_R32G32B32_SFLOAT,
+            .offset = offsetof(Vertex, uv)
         }
     };
 
@@ -248,13 +262,10 @@ void VulkanEngine::init()
         .vertexAttributeDescriptionCount = sizeof(attrDesc) / sizeof(attrDesc[0]),
         .pVertexAttributeDescriptions = attrDesc
     };
-    builder.set_shaders(litVertShader, litFragShader);
-    litPipeline = builder.build_pipeline(internal::context.device);
+    builder.set_shaders(mainVertShader, mainFragShader);
+    mainPipeline = builder.build_pipeline(internal::context.device);
 
-    builder.set_shaders(unlitVertShader, unlitFragShader);
-    unlitPipeline = builder.build_pipeline(internal::context.device);
-
-    builder.set_shaders(unlitVertShader, unlitFragShader)
+    builder.set_shaders(mainVertShader, mainFragShader)
            .set_topology(VK_PRIMITIVE_TOPOLOGY_LINE_LIST)
            .set_polygon_mode(VK_POLYGON_MODE_FILL); 
     linePipeline = builder.build_pipeline(internal::context.device);
@@ -265,13 +276,9 @@ void VulkanEngine::cleanup()
 {
     VkDevice device = graphics::internal::context.device;
 
-    if (litPipeline != VK_NULL_HANDLE)
+    if (mainPipeline != VK_NULL_HANDLE)
     {
-        vkDestroyPipeline(device, litPipeline, nullptr);
-    }
-    if (unlitPipeline != VK_NULL_HANDLE)
-    {
-        vkDestroyPipeline(device, unlitPipeline, nullptr);
+        vkDestroyPipeline(device, mainPipeline, nullptr);
     }
     if (linePipeline != VK_NULL_HANDLE)
     {
@@ -330,7 +337,7 @@ void VulkanEngine::draw(VkCommandBuffer cmd, VkFramebuffer framebuffer, const Fr
     vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
 
-    if (litPipeline == VK_NULL_HANDLE || unlitPipeline == VK_NULL_HANDLE)
+    if (mainPipeline == VK_NULL_HANDLE)
     {
         vkCmdEndRenderPass(cmd);
         vkEndCommandBuffer(cmd);
@@ -359,11 +366,23 @@ void VulkanEngine::draw(VkCommandBuffer cmd, VkFramebuffer framebuffer, const Fr
 
     size_t current_dynamic_index { 0uz };
 
-    auto draw_batch = [&](VkPipeline pipeline, std::span<const RenderObjectData> render_objects)
+    auto draw_batch = [&](
+        VkPipeline pipeline,
+        std::span<const RenderObjectData> render_objects,
+        PushConstants& pc
+    )
     {
         if (render_objects.empty()) { return; }
 
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        vkCmdPushConstants(
+            cmd,
+            pipelineLayout,
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, // TODO: vertex?
+            0,
+            sizeof(PushConstants),
+            &pc
+        );
         
         const Mesh* lastMesh = nullptr;
 
@@ -412,9 +431,23 @@ void VulkanEngine::draw(VkCommandBuffer cmd, VkFramebuffer framebuffer, const Fr
         }
     };
 
-    draw_batch(litPipeline, data.litObjects);
-    draw_batch(unlitPipeline, data.unlitObjects);
-    draw_batch(linePipeline, data.lineObjects);
+    PushConstants litPC
+    {
+        .isUnlit = 0,
+        .time = static_cast<float>(data.time),
+        .enableComplexSampling = 0
+    };
+    draw_batch(mainPipeline, data.litObjects, litPC);
+
+    PushConstants unlitPC
+    { 
+        .isUnlit = 1,
+        .time = static_cast<float>(data.time),
+        .enableComplexSampling = 0
+    };
+    draw_batch(mainPipeline, data.unlitObjects, unlitPC);
+
+    draw_batch(linePipeline, data.lineObjects, unlitPC);
 
     vkCmdEndRenderPass(cmd);
     vkEndCommandBuffer(cmd);

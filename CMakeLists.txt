@@ -77,12 +77,16 @@ FetchContent_MakeAvailable(
 	glm
 )
 
+add_library(stb-image INTERFACE)
+target_include_directories(stb-image INTERFACE ${CMAKE_SOURCE_DIR}/include/stb_image.h)
+
 target_link_libraries(${PROJECT_NAME} PRIVATE
 	glfw
 	Vulkan::Vulkan
 	vk-bootstrap::vk-bootstrap
 	GPUOpen::VulkanMemoryAllocator
 	glm::glm
+	stb-image
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
@@ -120,10 +124,8 @@ if(GLSLC_FOUND)
 	# To compile shader file, use compile_shader function with a file name
 	# of a shader inside shaders directory. See example below:
 
-	compile_shader(lit_shader.vert)
-	compile_shader(lit_shader.frag)
-	compile_shader(unlit_shader.vert)
-	compile_shader(unlit_shader.frag)
+	compile_shader(main.vert)
+	compile_shader(main.frag)
 
 	add_custom_target(shaders DEPENDS ${_SHADER_BINARIES})
 	add_dependencies(${PROJECT_NAME} shaders)

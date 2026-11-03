@@ -56,6 +56,7 @@ namespace graphics::app
 {
 std::unique_ptr<core::VulkanEngine> g_engine;
 AppState g_state;
+core::FrameRenderData g_renderData;
 
 bool initialize()
 {
@@ -264,6 +265,7 @@ void update(double time)
     static double lastTime = 0.0;
     float dt = static_cast<float>(time - lastTime);
     lastTime = time;
+    g_renderData.time = time;
 
     ui::camera_motion(g_state, dt);
     ui::update_imgui(g_state);
@@ -285,8 +287,7 @@ void render(const internal::FrameData& fd)
 {
     auto& context = internal::context;
 
-    core::FrameRenderData renderData;
-    renderData.sceneUniform = 
+    g_renderData.sceneUniform = 
     {
         .view = g_state.camera.get_view_matrix(),
         .cameraPosition = glm::vec4(g_state.camera.position, 1.0f),
@@ -300,13 +301,13 @@ void render(const internal::FrameData& fd)
     float aspect = static_cast<float>(context.swapchain_extent.width) / static_cast<float>(context.swapchain_extent.height);
     if (g_state.projectionType == 0)
     {
-        renderData.sceneUniform.proj = glm::perspectiveZO(g_state.camera.fovy, aspect, 0.1f, 100.0f);
+        g_renderData.sceneUniform.proj = glm::perspectiveZO(g_state.camera.fovy, aspect, 0.1f, 100.0f);
     }
     else
     {
-        renderData.sceneUniform.proj = glm::orthoZO(-aspect * 2.0f, aspect * 2.0f, -2.0f, 2.0f, 0.1f, 100.0f);
+        g_renderData.sceneUniform.proj = glm::orthoZO(-aspect * 2.0f, aspect * 2.0f, -2.0f, 2.0f, 0.1f, 100.0f);
     }
-    renderData.sceneUniform.proj[1][1] *= -1; // Y-axis for Vulkan
+    g_renderData.sceneUniform.proj[1][1] *= -1; // Y-axis for Vulkan
 
     std::vector<core::RenderObjectData> renderLitObjects;
     renderLitObjects.reserve(g_state.litObjects.size());
@@ -401,13 +402,13 @@ void render(const internal::FrameData& fd)
         }
     }
 
-    renderData.litObjects = renderLitObjects;
-    renderData.unlitObjects = renderUnlitObjects;
-    renderData.lineObjects = renderLineObjects;
-    renderData.pointLights = g_state.pointLights;
-    renderData.spotLights  = g_state.spotLights;
+    g_renderData.litObjects = renderLitObjects;
+    g_renderData.unlitObjects = renderUnlitObjects;
+    g_renderData.lineObjects = renderLineObjects;
+    g_renderData.pointLights = g_state.pointLights;
+    g_renderData.spotLights  = g_state.spotLights;
 
-    g_engine->draw(fd.command_buffer, fd.framebuffer, renderData);
+    g_engine->draw(fd.command_buffer, fd.framebuffer, g_renderData);
 }
 
 } // namespace graphics::app
