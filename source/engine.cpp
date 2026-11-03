@@ -12,6 +12,88 @@
 #include <cstring>
 #include <print>
 
+namespace graphics::core::geometry
+{
+
+void generate_cone_mesh(Mesh& mesh)
+{
+    std::vector<Vertex> coneVerts;
+    std::vector<uint32_t> coneIndices;
+
+    coneVerts.push_back({glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f)}); 
+
+    const int segments { 16 };
+    for (int i = 0; i < segments; ++i)
+    {
+        float angle { static_cast<float>(i) / segments * 2.0f * glm::pi<float>() };
+        coneVerts.push_back({
+            glm::vec3(std::cos(angle), std::sin(angle), -1.0f), 
+            glm::vec3(0.0f)
+        });
+    }
+
+    for (int i = 1; i <= segments; ++i)
+    {
+        int next { (i % segments) + 1 };
+        coneIndices.push_back(0);
+        coneIndices.push_back(i);
+        coneIndices.push_back(i);
+        coneIndices.push_back(next);
+    }
+
+    auto& alloc = internal::context.allocator;
+
+    mesh.vertexBuffer = Buffer::create(
+        alloc,
+        coneVerts.size() * sizeof(Vertex),
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        VMA_MEMORY_USAGE_AUTO
+    );
+    mesh.vertexBuffer.upload_data<Vertex>(alloc, coneVerts);
+
+    mesh.indexBuffer = Buffer::create(
+        alloc,
+        coneIndices.size() * sizeof(uint32_t),
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        VMA_MEMORY_USAGE_AUTO
+    );
+    mesh.indexBuffer.upload_data<uint32_t>(alloc, std::span{coneIndices});
+
+    mesh.indexCount = coneIndices.size();
+}
+
+void generate_plane_mesh(Mesh& mesh)
+{
+    const std::array<Vertex, 4> planeVerts = {
+        Vertex{{-0.5f, 0.0f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+        Vertex{{ 0.5f, 0.0f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+        Vertex{{ 0.5f, 0.0f,  0.5f}, {0.0f, 1.0f, 0.0f}},
+        Vertex{{-0.5f, 0.0f,  0.5f}, {0.0f, 1.0f, 0.0f}}
+    };
+    const std::array<uint32_t, 6> planeIndices = { 0, 2, 1, 2, 0, 3 };
+
+    auto& alloc = internal::context.allocator;
+
+    mesh.vertexBuffer = Buffer::create(
+        alloc,
+        sizeof(planeVerts),
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        VMA_MEMORY_USAGE_AUTO
+    );
+    mesh.vertexBuffer.upload_data<Vertex>(alloc, planeVerts);
+
+    mesh.indexBuffer = Buffer::create(
+        alloc,
+        sizeof(planeIndices),
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        VMA_MEMORY_USAGE_AUTO
+    );
+    mesh.indexBuffer.upload_data<uint32_t>(alloc, planeIndices);
+
+    mesh.indexCount = planeIndices.size();
+}
+
+} // namespace graphics::geometry
 
 namespace graphics::core
 {
@@ -59,8 +141,8 @@ void VulkanEngine::init_buffers()
 
     cubeMesh.indexCount = sizeof(indices) / sizeof(indices[0]);
 
-    generate_cone_mesh();
-    generate_plane_mesh();
+    geometry::generate_cone_mesh(coneMesh);
+    geometry::generate_plane_mesh(planeMesh);
 
     sceneUniformBuffer = Buffer::create(
         allocator,
@@ -99,84 +181,6 @@ void VulkanEngine::init_descriptors()
     VkDescriptorBufferInfo dynObjInfo { dynamicObjectBuffer, 0, sizeof(ObjectUniform) };
     builder.bind_buffer(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, dynObjInfo)
            .build(device, descriptorAllocator, objectSetLayout, dynamicObjectDescriptorSet);
-}
-
-void VulkanEngine::generate_cone_mesh()
-{
-    std::vector<Vertex> coneVerts;
-    std::vector<uint32_t> coneIndices;
-
-    coneVerts.push_back({glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f)}); 
-
-    const int segments { 16 };
-    for (int i = 0; i < segments; ++i)
-    {
-        float angle { static_cast<float>(i) / segments * 2.0f * glm::pi<float>() };
-        coneVerts.push_back({
-            glm::vec3(std::cos(angle), std::sin(angle), -1.0f), 
-            glm::vec3(0.0f)
-        });
-    }
-
-    for (int i = 1; i <= segments; ++i)
-    {
-        int next { (i % segments) + 1 };
-        coneIndices.push_back(0);
-        coneIndices.push_back(i);
-        coneIndices.push_back(i);
-        coneIndices.push_back(next);
-    }
-
-    auto& alloc = internal::context.allocator;
-
-    coneMesh.vertexBuffer = Buffer::create(
-        alloc,
-        coneVerts.size() * sizeof(Vertex),
-        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        VMA_MEMORY_USAGE_AUTO
-    );
-    coneMesh.vertexBuffer.upload_data<Vertex>(alloc, coneVerts);
-
-    coneMesh.indexBuffer = Buffer::create(
-        alloc,
-        coneIndices.size() * sizeof(uint32_t),
-        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-        VMA_MEMORY_USAGE_AUTO
-    );
-    coneMesh.indexBuffer.upload_data<uint32_t>(alloc, std::span{coneIndices});
-
-    coneMesh.indexCount = coneIndices.size();
-}
-
-void VulkanEngine::generate_plane_mesh()
-{
-    const std::array<Vertex, 4> planeVerts = {
-        Vertex{{-0.5f, 0.0f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-        Vertex{{ 0.5f, 0.0f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-        Vertex{{ 0.5f, 0.0f,  0.5f}, {0.0f, 1.0f, 0.0f}},
-        Vertex{{-0.5f, 0.0f,  0.5f}, {0.0f, 1.0f, 0.0f}}
-    };
-    const std::array<uint32_t, 6> planeIndices = { 0, 2, 1, 2, 0, 3 };
-
-    auto& alloc = internal::context.allocator;
-
-    planeMesh.vertexBuffer = Buffer::create(
-        alloc,
-        sizeof(planeVerts),
-        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        VMA_MEMORY_USAGE_AUTO
-    );
-    planeMesh.vertexBuffer.upload_data<Vertex>(alloc, planeVerts);
-
-    planeMesh.indexBuffer = Buffer::create(
-        alloc,
-        sizeof(planeIndices),
-        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-        VMA_MEMORY_USAGE_AUTO
-    );
-    planeMesh.indexBuffer.upload_data<uint32_t>(alloc, planeIndices);
-
-    planeMesh.indexCount = planeIndices.size();
 }
 
 

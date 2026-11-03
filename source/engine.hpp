@@ -58,8 +58,6 @@ private:
     
     void init_buffers();
     void init_descriptors();
-    void generate_cone_mesh();
-    void generate_plane_mesh();
 };
 
 
