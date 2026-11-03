@@ -2,6 +2,7 @@
 #include "common.hpp"
 #include "engine.hpp"
 #include "graphics_internal.hpp"
+#include "UI.hpp"
 
 #include <GLFW/glfw3.h>
 #include "glm/ext/matrix_clip_space.hpp"
@@ -16,107 +17,31 @@
 
 #include <memory>
 
-namespace application
-{
-std::unique_ptr<graphics::core::VulkanEngine> g_engine;
-
-class Camera
-{
-public:
-    glm::vec3 position { 0.0f, 0.0f, 5.0f };
-    float yaw { -90.0f };
-    float pitch { 0.0f };
-    float fovy { glm::radians(45.0f) };
-    float movement_speed { 5.0f };
-    float turn_speed { 60.0f };
-
-    glm::mat4 get_view_matrix() const
-    {
-        glm::vec3 front;
-        front.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
-        front.y = sin(glm::radians(pitch));
-        front.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
-        front = glm::normalize(front);
-        
-        return glm::lookAt(position, position + front, glm::vec3(0, 1, 0));
-    }
-};
-
-struct Transform final
-{
-    glm::vec3 position{0.0f};
-    glm::vec3 rotation{0.0f};
-    glm::vec3 scale{1.0f};
-
-    glm::mat4 get_matrix() const
-    {
-        glm::mat4 mat = glm::translate(glm::mat4(1.0f), position);
-        mat = glm::rotate(mat, glm::radians(rotation.x), glm::vec3(1, 0, 0));
-        mat = glm::rotate(mat, glm::radians(rotation.y), glm::vec3(0, 1, 0));
-        mat = glm::rotate(mat, glm::radians(rotation.z), glm::vec3(0, 0, 1));
-        mat = glm::scale(mat, scale);
-        return mat;
-    }
-    glm::mat4 get_normal_matrix() const
-    {
-        glm::mat4 mat = get_matrix();
-        return glm::transpose(glm::inverse(mat));
-    }
-};
-
-struct AppObject
-{
-    std::string name;
-    const graphics::core::Mesh* mesh;
-    Transform transform;
-    Material material;
-
-    bool isAnimating = false;
-    float animSpeed = 1.0f;
-    float animRadius = 2.0f;
-    float animTime = 0.0f;
-};
-
-struct AppState
-{
-    Camera camera{};
-
-    glm::vec4 ambientLight{0.1f, 0.1f, 0.1f, 1.0f};
-    glm::vec4 dirLightDir{0.0f, -1.0f, -1.0f, 0.0f};
-    glm::vec4 dirLightColor{0.0f, 0.0f, 0.0f, 1.0f};
-
-    std::vector<PointLight> pointLights{};
-    std::vector<SpotLight> spotLights{};
-
-    int projectionType{0}; // 0 - Perspective, 1 - Orthographic
-    std::vector<AppObject> litObjects;
-    std::vector<AppObject> unlitObjects;
-    std::vector<AppObject> lineObjects;
-
-    bool show_point_lights { true }; 
-    bool show_spot_lights { true };
-} g_state;
-
-
 namespace {
 
-Material make_material(glm::vec4 albedo, glm::vec4 specular, float shininess) {
-    return Material{
+auto make_material(
+    glm::vec4 albedo,
+    glm::vec4 specular,
+    float shininess
+) -> graphics::Material
+{
+    return graphics::Material{
         .albedo        = albedo,
         .specularColor = specular,
         .shininess     = shininess,
     };
 }
 
-AppObject make_plane(
+auto make_plane(
     std::string name,
     const graphics::core::Mesh* mesh,
     glm::vec3 position,
     glm::vec3 rotation,
     glm::vec3 scale,
-    Material  material
-) {
-    return AppObject{
+    graphics::Material  material
+) -> graphics::app::AppObject
+{
+    return graphics::app::AppObject{
         .name      = std::move(name),
         .mesh      = mesh,
         .transform = { .position = position, .rotation = rotation, .scale = scale },
@@ -127,13 +52,22 @@ AppObject make_plane(
 } // namespace
 
 
+namespace graphics::app 
+{
+std::unique_ptr<core::VulkanEngine> g_engine;
+AppState g_state;
+
 bool initialize()
 {
-    g_engine = std::make_unique<graphics::core::VulkanEngine>();
+    g_engine = std::make_unique<core::VulkanEngine>();
     g_engine->init();
 
     const auto* plane = &g_engine->planeMesh;
     const auto* cube  = &g_engine->cubeMesh;
+
+    g_state.ambientLight = glm::vec4(0.1f, 0.1f, 0.1f, 1.0f);
+    g_state.dirLightDir = glm::vec4(0.0f, -1.0f, -1.0f, 0.0f);
+    g_state.dirLightColor = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
 
     g_state.camera.position = { 3.8f,  2.4f,  3.8f };
     g_state.camera.yaw      = -135.0f;
@@ -321,9 +255,7 @@ bool initialize()
 
 void shutdown()
 {
-	auto& context = graphics::internal::context;
-	vkQueueWaitIdle(context.graphics_queue);
-    g_engine->cleanup();
+	vkQueueWaitIdle(internal::context.graphics_queue);
     g_engine.reset();
 }
 
@@ -333,163 +265,8 @@ void update(double time)
     float dt = static_cast<float>(time - lastTime);
     lastTime = time;
 
-    ImGuiIO& io = ImGui::GetIO();
-
-    if (!io.WantCaptureKeyboard) // Camera motion (WASD + QE + Arrows | Shift - acceleration)
-    {
-        float cameraSpeed { g_state.camera.movement_speed * dt };
-        if (ImGui::IsKeyDown(ImGuiKey_LeftShift)) cameraSpeed *= 3.0f;
-
-        glm::vec3 front;
-        front.x = cos(glm::radians(g_state.camera.yaw)) * cos(glm::radians(g_state.camera.pitch));
-        front.y = sin(glm::radians(g_state.camera.pitch));
-        front.z = sin(glm::radians(g_state.camera.yaw)) * cos(glm::radians(g_state.camera.pitch));
-        front = glm::normalize(front);
-        
-        glm::vec3 right { glm::normalize(glm::cross(front, glm::vec3(0.0f, 1.0f, 0.0f))) };
-        glm::vec3 up { glm::normalize(glm::cross(right, front)) };
-
-        if (ImGui::IsKeyDown(ImGuiKey_W)) g_state.camera.position += front * cameraSpeed;
-        if (ImGui::IsKeyDown(ImGuiKey_S)) g_state.camera.position -= front * cameraSpeed;
-        if (ImGui::IsKeyDown(ImGuiKey_A)) g_state.camera.position -= right * cameraSpeed;
-        if (ImGui::IsKeyDown(ImGuiKey_D)) g_state.camera.position += right * cameraSpeed;
-        if (ImGui::IsKeyDown(ImGuiKey_E)) g_state.camera.position += up * cameraSpeed;
-        if (ImGui::IsKeyDown(ImGuiKey_Q)) g_state.camera.position -= up * cameraSpeed;
-        
-        float rotSpeed { g_state.camera.turn_speed * dt };
-        if (ImGui::IsKeyDown(ImGuiKey_LeftArrow))  g_state.camera.yaw   -= rotSpeed;
-        if (ImGui::IsKeyDown(ImGuiKey_RightArrow)) g_state.camera.yaw   += rotSpeed;
-        if (ImGui::IsKeyDown(ImGuiKey_UpArrow))    g_state.camera.pitch += rotSpeed;
-        if (ImGui::IsKeyDown(ImGuiKey_DownArrow))  g_state.camera.pitch -= rotSpeed;
-
-        if (g_state.camera.pitch > 89.0f)  g_state.camera.pitch = 89.0f;
-        if (g_state.camera.pitch < -89.0f) g_state.camera.pitch = -89.0f;
-    }
-
-    ImGui::Begin("Lab 2: 3D Graphics");
-    
-    ImGui::Text("Press ARROWS to look around.");
-    ImGui::Text("WASD - motion | QE - Up/Down | SHIFT - acceleration");
-    ImGui::Separator();
-
-	if (ImGui::CollapsingHeader("Camera"))
-    {
-		ImGui::SliderFloat("Movement speed", &g_state.camera.movement_speed, 0.5f, 12.0f);
-		ImGui::SliderFloat("Turn speed", &g_state.camera.turn_speed, 20.0f, 180.0f);
-		ImGui::SliderFloat("Field of view", &g_state.camera.fovy, 0.349055f, 2.0f);
-	}
-
-    if (ImGui::CollapsingHeader("Global Lighting"))
-    {
-        ImGui::ColorEdit3("Ambient Color", glm::value_ptr(g_state.ambientLight));
-        
-        ImGui::Text("Directional Light");
-        ImGui::SliderFloat3("Direction", glm::value_ptr(g_state.dirLightDir), -1.0f, 1.0f);
-        ImGui::ColorEdit3("Dir Color", glm::value_ptr(g_state.dirLightColor));
-        if (ImGui::Button("Show spot lights")) { g_state.show_spot_lights = !g_state.show_spot_lights; }
-        if (ImGui::Button("Show point lights")) { g_state.show_point_lights = !g_state.show_point_lights; }
-    }
-
-    if (ImGui::CollapsingHeader("Point Lights"))
-    {
-        if (ImGui::Button("Add Point Light") && g_state.pointLights.size() < graphics::core::VulkanEngine::maxPointLights)
-        {
-            g_state.pointLights.push_back({
-                .position = glm::vec4(0.0f, 2.0f, 0.0f, 1.0f),
-                .color = glm::vec4(1.0f, 0.8f, 0.2f, 1.0f),
-                .linear = 0.09f,
-                .quadratic = 0.032f
-            });
-        }
-
-        for (size_t i { 0 }; i < g_state.pointLights.size(); ++i)
-        {
-            ImGui::PushID(static_cast<int>(i));
-            ImGui::Text("Point Light %zu", i);
-            ImGui::SliderFloat3("Position", glm::value_ptr(g_state.pointLights[i].position), -10.0f, 10.0f);
-            ImGui::ColorEdit3("Color", glm::value_ptr(g_state.pointLights[i].color));
-            ImGui::SliderFloat("Linear", &g_state.pointLights[i].linear, 0.0f, 1.0f);
-            ImGui::SliderFloat("Quadratic", &g_state.pointLights[i].quadratic, 0.0f, 1.0f);
-            
-            if (ImGui::Button("Remove"))
-            {
-                g_state.pointLights.erase(g_state.pointLights.begin() + i);
-                --i;
-            }
-            ImGui::Separator();
-            ImGui::PopID();
-        }
-    }
-
-    if (ImGui::CollapsingHeader("Spot Lights"))
-    {
-        if (ImGui::Button("Add Spot Light") && g_state.spotLights.size() < graphics::core::VulkanEngine::maxSpotLights)
-        {
-            g_state.spotLights.push_back({
-                .position = glm::vec4(0.0f, 5.0f, 0.0f, 1.0f),
-                .direction = glm::vec4(0.0f, -1.0f, 0.0f, 0.0f),
-                .color = glm::vec4(0.0f, 1.0f, 1.0f, 1.0f),
-                .innerCutoff = glm::cos(glm::radians(12.5f)),
-                .outerCutoff = glm::cos(glm::radians(17.5f)),
-                .linear = 0.09f,
-                .quadratic = 0.032f
-            });
-        }
-
-        for (size_t i = 0; i < g_state.spotLights.size(); ++i)
-        {
-            ImGui::PushID(static_cast<int>(i + graphics::core::VulkanEngine::maxPointLights));
-            ImGui::Text("Spot Light %zu", i);
-            ImGui::SliderFloat3("Position", glm::value_ptr(g_state.spotLights[i].position), -10.0f, 10.0f);
-            ImGui::SliderFloat3("Direction", glm::value_ptr(g_state.spotLights[i].direction), -1.0f, 1.0f);
-            ImGui::ColorEdit3("Color", glm::value_ptr(g_state.spotLights[i].color));
-            
-            float innerAngle = glm::degrees(glm::acos(g_state.spotLights[i].innerCutoff));
-            float outerAngle = glm::degrees(glm::acos(g_state.spotLights[i].outerCutoff));
-            if (ImGui::SliderFloat("Inner Angle", &innerAngle, 0.0f, 45.0f)) g_state.spotLights[i].innerCutoff = glm::cos(glm::radians(innerAngle));
-            if (ImGui::SliderFloat("Outer Angle", &outerAngle, 0.0f, 45.0f)) g_state.spotLights[i].outerCutoff = glm::cos(glm::radians(outerAngle));
-            
-            ImGui::SliderFloat("Linear", &g_state.spotLights[i].linear, 0.0f, 1.0f);
-            ImGui::SliderFloat("Quadratic", &g_state.spotLights[i].quadratic, 0.0f, 1.0f);
-            
-            if (ImGui::Button("Remove"))
-            {
-                g_state.spotLights.erase(g_state.spotLights.begin() + i);
-                --i;
-            }
-            ImGui::Separator();
-            ImGui::PopID();
-        }
-    }
-
-    if (ImGui::CollapsingHeader("Objects"))
-    {
-        int ui_id { 0 };
-        for (auto& obj : g_state.litObjects)
-        {
-            ImGui::PushID(ui_id++);
-            if (ImGui::TreeNode(obj.name.c_str()))
-            {
-                ImGui::SliderFloat3("Position", glm::value_ptr(obj.transform.position), -5.0f, 5.0f);
-                ImGui::SliderFloat3("Rotation", glm::value_ptr(obj.transform.rotation), 0.0f, 360.0f);
-                ImGui::SliderFloat3("Scale", glm::value_ptr(obj.transform.scale), 0.1f, 5.0f);
-                
-                ImGui::ColorEdit3("Albedo (Color)", glm::value_ptr(obj.material.albedo));
-                ImGui::ColorEdit3("Specular", glm::value_ptr(obj.material.specularColor));
-                ImGui::SliderFloat("Shininess", &obj.material.shininess, 1.0f, 256.0f);
-
-                if (ImGui::Button(obj.isAnimating ? "Pause Animation" : "Play Animation"))
-                {
-                    obj.isAnimating = !obj.isAnimating;
-                }
-                
-                ImGui::TreePop();
-            }
-            ImGui::PopID();
-        }
-    }
-    
-    ImGui::End();
+    ui::camera_motion(g_state, dt);
+    ui::update_imgui(g_state);
 
     for (auto& obj : g_state.litObjects)
     {
@@ -504,11 +281,11 @@ void update(double time)
     }
 }
 
-void render(const graphics::internal::FrameData& fd)
+void render(const internal::FrameData& fd)
 {
-    auto& context = graphics::internal::context;
+    auto& context = internal::context;
 
-    graphics::core::FrameRenderData renderData;
+    core::FrameRenderData renderData;
     renderData.sceneUniform = 
     {
         .view = g_state.camera.get_view_matrix(),
@@ -531,7 +308,7 @@ void render(const graphics::internal::FrameData& fd)
     }
     renderData.sceneUniform.proj[1][1] *= -1; // Y-axis for Vulkan
 
-    std::vector<graphics::core::RenderObjectData> renderLitObjects;
+    std::vector<core::RenderObjectData> renderLitObjects;
     renderLitObjects.reserve(g_state.litObjects.size());
     
     for (const auto& obj : g_state.litObjects)
@@ -544,7 +321,7 @@ void render(const graphics::internal::FrameData& fd)
         });
     }
 
-    std::vector<graphics::core::RenderObjectData> renderUnlitObjects;
+    std::vector<core::RenderObjectData> renderUnlitObjects;
     
     if (g_state.show_point_lights)
     {
@@ -567,7 +344,7 @@ void render(const graphics::internal::FrameData& fd)
         }
     }
 
-    std::vector<graphics::core::RenderObjectData> renderLineObjects;
+    std::vector<core::RenderObjectData> renderLineObjects;
     if (g_state.show_spot_lights)
     {
         for (const auto& light : g_state.spotLights)
@@ -633,4 +410,4 @@ void render(const graphics::internal::FrameData& fd)
     g_engine->draw(fd.command_buffer, fd.framebuffer, renderData);
 }
 
-} // namespace application
+} // namespace graphics::app

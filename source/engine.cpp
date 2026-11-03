@@ -15,6 +15,8 @@
 
 namespace graphics::core
 {
+VulkanEngine::~VulkanEngine() { cleanup(); }
+
 
 void VulkanEngine::init_buffers()
 {
@@ -380,7 +382,11 @@ void VulkanEngine::draw(VkCommandBuffer cmd, VkFramebuffer framebuffer, const Fr
                 obj.normalMatrix,
                 obj.material
             };
-            std::memcpy(pMappedData + (current_dynamic_index * dynamicAlignment), &objUbo, sizeof(ObjectUniform));
+            std::memcpy(
+                pMappedData + (current_dynamic_index * dynamicAlignment),
+                &objUbo,
+                sizeof(ObjectUniform)
+            );
 
             uint32_t dynamicOffset { static_cast<uint32_t>(current_dynamic_index * dynamicAlignment) };
 

@@ -14,6 +14,10 @@ namespace graphics::core
 class VulkanEngine final
 {
 public:
+    VulkanEngine() = default;
+    ~VulkanEngine();
+
+public:
     VkPipeline litPipeline;
     VkPipeline unlitPipeline;
     VkPipeline linePipeline;
@@ -32,15 +36,15 @@ public:
     Mesh coneMesh;
     Mesh planeMesh;
 
-    static constexpr size_t maxObjects { 1000uz }; // number of objects on the scene simultaneously
+    static constexpr size_t maxObjects { consts::maxObjects };
     size_t dynamicAlignment { 0uz };
 
     Buffer dynamicObjectBuffer;
     VkDescriptorSet dynamicObjectDescriptorSet;
 
-    static constexpr size_t maxPointLights { 100uz };
+    static constexpr size_t maxPointLights { consts::maxPointLights };
     Buffer pointLightBuffer;
-    static constexpr size_t maxSpotLights { 100uz };
+    static constexpr size_t maxSpotLights { consts::maxSpotLights };
     Buffer spotLightBuffer;
     
     Buffer sceneUniformBuffer;

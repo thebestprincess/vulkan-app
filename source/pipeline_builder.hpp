@@ -7,17 +7,18 @@
 class PipelineBuilder final
 {
 public:
+    PipelineBuilder();
+
+public:
     std::vector<VkPipelineShaderStageCreateInfo> _shaderStages;
    
+    VkPipelineLayout _pipelineLayout;
     VkPipelineInputAssemblyStateCreateInfo _inputAssembly;
     VkPipelineRasterizationStateCreateInfo _rasterizer;
     VkPipelineColorBlendAttachmentState _colorBlendAttachment;
     VkPipelineMultisampleStateCreateInfo _multisampling;
-    VkPipelineLayout _pipelineLayout;
     VkPipelineDepthStencilStateCreateInfo _depthStencil;
     VkPipelineVertexInputStateCreateInfo _vertexInputInfo;
-
-	PipelineBuilder();
 
     PipelineBuilder& set_shaders(VkShaderModule vertexShader, VkShaderModule fragmentShader);
     PipelineBuilder& set_topology(VkPrimitiveTopology topology);
