@@ -10,6 +10,9 @@
 #include <cstring>
 #include <filesystem>
 #include <vector>
+#include <expected>
+#include <concepts>
+#include <span>
 
 namespace graphics::core
 {
@@ -163,6 +166,78 @@ public:
     );
 
     void clear();
+};
+
+class RawImage final
+{
+public:
+    uint32_t width{0};
+    uint32_t height{0};
+    uint32_t channels{0};
+    std::vector<std::byte> pixels;
+
+    static auto load(const std::filesystem::path& path) -> std::expected<RawImage, std::string>;
+    static RawImage create_fallback_white();
+};
+
+class TransferContext final
+{
+public:
+    void init(uint32_t queueFamilyIndex);
+    void cleanup();
+
+    void execute(VkQueue queue, std::invocable<VkCommandBuffer> auto&& commands) 
+    {
+        vkResetCommandBuffer(cmdBuffer, 0);
+
+        VkCommandBufferBeginInfo beginInfo
+        {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
+        };
+        vkBeginCommandBuffer(cmdBuffer, &beginInfo);
+
+        commands(cmdBuffer);
+
+        vkEndCommandBuffer(cmdBuffer);
+
+        VkSubmitInfo submitInfo
+        {
+            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            .commandBufferCount = 1,
+            .pCommandBuffers = &cmdBuffer
+        };
+
+        vkQueueSubmit(queue, 1, &submitInfo, fence);
+        vkWaitForFences(internal::context.device, 1, &fence, VK_TRUE, UINT64_MAX);
+        vkResetFences(internal::context.device, 1, &fence);
+    }
+
+private:
+    VkCommandPool commandPool { VK_NULL_HANDLE };
+    VkCommandBuffer cmdBuffer { VK_NULL_HANDLE };
+    VkFence fence { VK_NULL_HANDLE };
+};
+
+
+class Texture final
+{
+public:
+    VkImage image { VK_NULL_HANDLE };
+    VmaAllocation allocation { VK_NULL_HANDLE };
+    VkImageView imageView { VK_NULL_HANDLE };
+    VkSampler sampler { VK_NULL_HANDLE };
+
+    Texture() = default;
+    ~Texture();
+
+    Texture(Texture&& other) noexcept;
+    Texture& operator=(Texture&& other) noexcept;
+    Texture(const Texture&) = delete;
+    Texture& operator=(const Texture&) = delete;
+
+private:
+    void destroy();
 };
 
 } // namespace graphics::core

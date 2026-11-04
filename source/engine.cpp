@@ -7,6 +7,7 @@
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan_core.h>
 
+#include <filesystem>
 #include <cstdint>
 #include <cstddef>
 #include <cstring>
@@ -35,7 +36,7 @@ void generate_cone_mesh(Mesh& mesh)
         coneVerts.push_back({
             glm::vec3(std::cos(angle), std::sin(angle), -1.0f), 
             glm::vec3(0.0f),
-            glm::vec2(0.0f)
+            glm::vec2(std::cos(angle)*0.5f + 0.5f, std::sin(angle)*0.5f + 0.5f)
         });
     }
 
@@ -72,10 +73,10 @@ void generate_cone_mesh(Mesh& mesh)
 void generate_plane_mesh(Mesh& mesh)
 {
     const std::array<Vertex, 4> planeVerts = {
-        Vertex{{-0.5f, 0.0f, -0.5f}, {0.0f, 1.0f, 0.0f}, glm::vec2(0.0f)},
-        Vertex{{ 0.5f, 0.0f, -0.5f}, {0.0f, 1.0f, 0.0f}, glm::vec2(0.0f)},
-        Vertex{{ 0.5f, 0.0f,  0.5f}, {0.0f, 1.0f, 0.0f}, glm::vec2(0.0f)},
-        Vertex{{-0.5f, 0.0f,  0.5f}, {0.0f, 1.0f, 0.0f}, glm::vec2(0.0f)}
+        Vertex{{-0.5f, 0.0f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+        Vertex{{ 0.5f, 0.0f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+        Vertex{{ 0.5f, 0.0f,  0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f}},
+        Vertex{{-0.5f, 0.0f,  0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f}}
     };
     const std::array<uint32_t, 6> planeIndices = { 0, 2, 1, 2, 0, 3 };
 
@@ -106,6 +107,130 @@ namespace graphics::core
 {
 VulkanEngine::~VulkanEngine() { cleanup(); }
 
+size_t VulkanEngine::load_texture(
+    const std::filesystem::path& path,
+    std::string name
+) {
+    Texture tex = upload_texture(path);
+
+    VkDescriptorImageInfo imageInfo {
+        .sampler = tex.sampler,
+        .imageView = tex.imageView,
+        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    };
+
+    VkDescriptorSet texSet;
+    DescriptorBuilder builder;
+    builder.bind_image(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, imageInfo)
+           .build_existing_layout(internal::context.device, descriptorAllocator, textureSetLayout, texSet);
+
+    loadedTextures.push_back({ std::move(name), std::move(tex), texSet });
+    
+    return loadedTextures.size() - 1;
+}
+
+Texture VulkanEngine::upload_texture(const std::filesystem::path& path)
+{
+    RawImage rawImg;
+    auto rawImgOpt = RawImage::load(path);
+    if (!rawImgOpt.has_value())
+    {
+        std::println(stderr, "WARNING: {}. Using fallback white texture.", rawImgOpt.error());
+        rawImg = RawImage::create_fallback_white(); 
+    }
+    else
+    {
+        rawImg = std::move(rawImgOpt.value());
+    }
+    auto& ctx = internal::context;
+    
+    Buffer stagingBuffer = Buffer::create(
+        ctx.allocator,
+        rawImg.pixels.size(),
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VMA_MEMORY_USAGE_AUTO
+    );
+    stagingBuffer.upload_data<std::byte>(ctx.allocator, rawImg.pixels);
+
+    Texture tex;
+    VkImageCreateInfo imageInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = VK_FORMAT_R8G8B8A8_SRGB,
+        .extent = { rawImg.width, rawImg.height, 1 },
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
+    };
+    VmaAllocationCreateInfo dmaAllocInfo { .usage = VMA_MEMORY_USAGE_AUTO };
+    vmaCreateImage(ctx.allocator, &imageInfo, &dmaAllocInfo, &tex.image, &tex.allocation, nullptr);
+
+
+    transferContext.execute(
+        ctx.graphics_queue,
+        [&](VkCommandBuffer cmd)
+        {
+            VkImageMemoryBarrier barrier
+            {
+                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                .srcAccessMask = 0,
+                .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                .image = tex.image,
+                .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 }
+            };
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+            VkBufferImageCopy region
+            {
+                .bufferOffset = 0,
+                .bufferRowLength = 0,
+                .bufferImageHeight = 0,
+                .imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
+                .imageOffset = { 0, 0, 0 },
+                .imageExtent = { rawImg.width, rawImg.height, 1 }
+            };
+            vkCmdCopyBufferToImage(cmd, stagingBuffer.buffer, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+
+            barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+        }
+    );
+
+    VkImageViewCreateInfo viewInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = tex.image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = VK_FORMAT_R8G8B8A8_SRGB,
+        .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 }
+    };
+    vkCreateImageView(ctx.device, &viewInfo, nullptr, &tex.imageView);
+
+    VkSamplerCreateInfo samplerInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = VK_FILTER_LINEAR,
+        .minFilter = VK_FILTER_LINEAR,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .anisotropyEnable = VK_FALSE,
+        .maxAnisotropy = 16.0f
+    };
+    vkCreateSampler(ctx.device, &samplerInfo, nullptr, &tex.sampler);
+
+    return tex; 
+}
 
 void VulkanEngine::init_buffers()
 {
@@ -196,6 +321,8 @@ void VulkanEngine::init()
     descriptorAllocator.init(graphics::internal::context.device);
     init_buffers();
     init_descriptors();
+    
+    transferContext.init(internal::context.graphics_queue_index);
 
     Shader mainVertShader(std::filesystem::current_path() / "shaders" / "main.vert.spv");
     Shader mainFragShader(std::filesystem::current_path() / "shaders" / "main.frag.spv");
@@ -212,11 +339,27 @@ void VulkanEngine::init()
         .size = sizeof(PushConstants)
     };
 
-    VkDescriptorSetLayout layouts[] { sceneSetLayout, objectSetLayout };
+    VkDescriptorSetLayoutBinding texBinding
+    {
+        .binding = 0,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .descriptorCount = 1,
+        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .pImmutableSamplers = nullptr
+    };
+    VkDescriptorSetLayoutCreateInfo texLayoutInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = 1,
+        .pBindings = &texBinding
+    };
+    vkCreateDescriptorSetLayout(internal::context.device, &texLayoutInfo, nullptr, &textureSetLayout);
+
+    VkDescriptorSetLayout layouts[] { sceneSetLayout, objectSetLayout, textureSetLayout };
     VkPipelineLayoutCreateInfo layoutInfo
     {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = 2,
+        .setLayoutCount = sizeof(layouts) / sizeof(layouts[0]),
         .pSetLayouts = layouts,
         .pushConstantRangeCount = 1,
         .pPushConstantRanges = &pushConstantRange
@@ -270,6 +413,7 @@ void VulkanEngine::init()
            .set_polygon_mode(VK_POLYGON_MODE_FILL); 
     linePipeline = builder.build_pipeline(internal::context.device);
     
+    load_texture("", "Default White");
 }
 
 void VulkanEngine::cleanup()
@@ -291,9 +435,11 @@ void VulkanEngine::cleanup()
     }
 
     descriptorAllocator.cleanup();
+    transferContext.cleanup();
 
     vkDestroyDescriptorSetLayout(device, sceneSetLayout, nullptr);
     vkDestroyDescriptorSetLayout(device, objectSetLayout, nullptr);
+    vkDestroyDescriptorSetLayout(device, textureSetLayout, nullptr);
 }
 
 void VulkanEngine::draw(VkCommandBuffer cmd, VkFramebuffer framebuffer, const FrameRenderData& data)
@@ -413,7 +559,12 @@ void VulkanEngine::draw(VkCommandBuffer cmd, VkFramebuffer framebuffer, const Fr
 
             uint32_t dynamicOffset { static_cast<uint32_t>(current_dynamic_index * dynamicAlignment) };
 
-            VkDescriptorSet sets[] { sceneDescriptorSet, dynamicObjectDescriptorSet };
+            VkDescriptorSet sets[]
+            {
+                sceneDescriptorSet,
+                dynamicObjectDescriptorSet,
+                obj.textureDescriptorSet
+            };
             vkCmdBindDescriptorSets(
                 cmd,
                 VK_PIPELINE_BIND_POINT_GRAPHICS,

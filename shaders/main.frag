@@ -19,6 +19,8 @@ layout(std430, set = 0, binding = 2) readonly buffer SpotLightBuffer {
     SpotLight spotLights[];
 };
 
+layout(set = 2, binding = 0) uniform sampler2D texSampler;
+
 layout(push_constant) uniform PushConstants {
     uint isUnlit;                 // 1 - unlit, 0 - lit 
     float time;                   // For non-trivial sampling
@@ -26,7 +28,9 @@ layout(push_constant) uniform PushConstants {
 } pc;
 
 void main() {
-    vec3 albedo = object.albedo.rgb;
+    vec4 texColor = texture(texSampler, fragUV);
+
+    vec3 albedo = texColor.rgb * object.albedo.rgb; 
     if (pc.isUnlit == 1) {
         outColor = vec4(albedo, 1.0);
         return;

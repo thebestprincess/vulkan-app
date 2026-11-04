@@ -10,14 +10,16 @@
 #include "glm/ext/vector_float3.hpp"
 #include "glm/ext/vector_float4.hpp"
 #include "glm/trigonometric.hpp"
-#include <imgui.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <imgui.h>
 
+#include <filesystem>
 #include <memory>
 
-namespace {
+namespace graphics::app
+{
 
 auto make_material(
     glm::vec4 albedo,
@@ -64,16 +66,16 @@ bool initialize()
     g_engine->init();
 
     const auto* plane = &g_engine->planeMesh;
-    const auto* cube  = &g_engine->cubeMesh;
+    const auto* cube = &g_engine->cubeMesh;
 
     g_state.ambientLight = glm::vec4(0.1f, 0.1f, 0.1f, 1.0f);
     g_state.dirLightDir = glm::vec4(0.0f, -1.0f, -1.0f, 0.0f);
     g_state.dirLightColor = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
 
     g_state.camera.position = { 3.8f,  2.4f,  3.8f };
-    g_state.camera.yaw      = -135.0f;
-    g_state.camera.pitch    = -12.0f;
-    g_state.camera.fovy     = glm::radians(50.0f);
+    g_state.camera.yaw = -135.0f;
+    g_state.camera.pitch = -12.0f;
+    g_state.camera.fovy = glm::radians(70.0f);
 
     g_state.litObjects.push_back(make_plane(
         "Floor", plane,
@@ -250,6 +252,18 @@ bool initialize()
         .quadratic = 0.44f
     });
 
+    g_engine->load_texture(
+        std::filesystem::current_path() / "textures" / "wood.jpg",
+        "Wood"
+    );
+    g_engine->load_texture(
+        std::filesystem::current_path() / "textures" / "metal.jpg",
+        "Metal"
+    );
+
+    g_state.litObjects[4].textureIndex = 1;
+
+
     return true;
 }
 
@@ -268,7 +282,7 @@ void update(double time)
     g_renderData.time = time;
 
     ui::camera_motion(g_state, dt);
-    ui::update_imgui(g_state);
+    ui::update_imgui(g_state, *g_engine);
 
     for (auto& obj : g_state.litObjects)
     {
@@ -318,7 +332,8 @@ void render(const internal::FrameData& fd)
             .mesh  = obj.mesh,
             .modelMatrix = obj.transform.get_matrix(),
             .normalMatrix = obj.transform.get_normal_matrix(),
-            .material = obj.material
+            .material = obj.material,
+            .textureDescriptorSet = g_engine->loadedTextures[obj.textureIndex].descriptorSet
         });
     }
 
@@ -340,7 +355,8 @@ void render(const internal::FrameData& fd)
                 .mesh = &g_engine->cubeMesh,
                 .modelMatrix = model,
                 .normalMatrix = glm::mat4(1.0f),
-                .material = unlitMat
+                .material = unlitMat,
+                .textureDescriptorSet = g_engine->loadedTextures[0].descriptorSet
             });
         }
     }
@@ -360,7 +376,8 @@ void render(const internal::FrameData& fd)
                 .mesh = &g_engine->cubeMesh,
                 .modelMatrix = model,
                 .normalMatrix = glm::mat4(1.0f),
-                .material = unlitMat
+                .material = unlitMat,
+                .textureDescriptorSet = g_engine->loadedTextures[0].descriptorSet
             });
         }
         
@@ -390,14 +407,16 @@ void render(const internal::FrameData& fd)
                 .mesh = &g_engine->coneMesh,
                 .modelMatrix = outerModel,
                 .normalMatrix = glm::mat4(1.0f),
-                .material = lineMat
+                .material = lineMat,
+                .textureDescriptorSet = g_engine->loadedTextures[0].descriptorSet
             });
 
             renderLineObjects.push_back({
                 .mesh = &g_engine->coneMesh,
                 .modelMatrix = innerModel,
                 .normalMatrix = glm::mat4(1.0f),
-                .material = lineMat
+                .material = lineMat,
+                .textureDescriptorSet = g_engine->loadedTextures[0].descriptorSet
             });
         }
     }

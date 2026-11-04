@@ -11,6 +11,7 @@ add_executable(${PROJECT_NAME}
 	source/gpu_resources.cpp
 	source/pipeline_builder.cpp
 	source/UI.cpp
+	source/scene.cpp
 )
 
 if(LINUX)
@@ -78,7 +79,7 @@ FetchContent_MakeAvailable(
 )
 
 add_library(stb-image INTERFACE)
-target_include_directories(stb-image INTERFACE ${CMAKE_SOURCE_DIR}/include/stb_image.h)
+target_include_directories(stb-image INTERFACE ${CMAKE_SOURCE_DIR}/include/stb_image/)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
 	glfw

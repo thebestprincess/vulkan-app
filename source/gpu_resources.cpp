@@ -1,5 +1,9 @@
 #include "gpu_resources.hpp"
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+#include <format>
+
 #include <cstdint>
 #include <print>
 #include <utility>
@@ -371,6 +375,120 @@ bool DescriptorAllocator::allocate(
             return false;
         }
     }
+}
+
+
+
+auto RawImage::load(
+    const std::filesystem::path& path
+) -> std::expected<RawImage, std::string>
+{
+    int w{};
+    int h{};
+    int c{};
+    stbi_uc* data { stbi_load(path.string().c_str(), &w, &h, &c, STBI_rgb_alpha) };
+    if (!data)
+    {
+        return std::unexpected(std::format("Failed to load image: {}", path.string()));
+    }
+
+    RawImage img
+    {
+        .width = static_cast<uint32_t>(w),
+        .height = static_cast<uint32_t>(h),
+        .channels = 4 // RGBA
+    };
+    
+    size_t size { w * h * 4UZ };
+    img.pixels.resize(size);
+    std::memcpy(img.pixels.data(), data, size);
+    
+    stbi_image_free(data); // Free С-memory
+    return img;
+}
+
+RawImage RawImage::create_fallback_white()
+{
+    RawImage img
+    {
+        .width = 1,
+        .height = 1,
+        .channels = 4
+    };
+    img.pixels = { std::byte{255}, std::byte{255}, std::byte{255}, std::byte{255} };
+    return img;
+}
+
+
+void TransferContext::init(
+    uint32_t queueFamilyIndex
+) {
+    auto& ctx = graphics::internal::context;
+
+    VkCommandPoolCreateInfo poolInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+        .queueFamilyIndex = queueFamilyIndex
+    };
+    vkCreateCommandPool(ctx.device, &poolInfo, nullptr, &commandPool);
+
+    VkCommandBufferAllocateInfo allocInfo{
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .commandPool = commandPool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1
+    };
+    vkAllocateCommandBuffers(ctx.device, &allocInfo, &cmdBuffer);
+
+    VkFenceCreateInfo fenceInfo{.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+    vkCreateFence(ctx.device, &fenceInfo, nullptr, &fence);
+}
+
+void TransferContext::cleanup()
+{
+    auto& ctx = graphics::internal::context;
+    vkDestroyFence(ctx.device, fence, nullptr);
+    vkDestroyCommandPool(ctx.device, commandPool, nullptr);
+}
+
+
+Texture::~Texture()
+{
+    destroy();
+}
+
+Texture::Texture(
+    Texture&& other
+) noexcept
+{
+    std::swap(image, other.image);
+    std::swap(allocation, other.allocation);
+    std::swap(imageView, other.imageView);
+    std::swap(sampler, other.sampler);
+}
+
+Texture& Texture::operator=(
+    Texture&& other
+) noexcept
+{
+    destroy();
+    std::swap(image, other.image);
+    std::swap(allocation, other.allocation);
+    std::swap(imageView, other.imageView);
+    std::swap(sampler, other.sampler);
+    return *this;
+}
+
+void Texture::destroy()
+{
+    auto& ctx = graphics::internal::context;
+    if (sampler) vkDestroySampler(ctx.device, sampler, nullptr);
+    if (imageView) vkDestroyImageView(ctx.device, imageView, nullptr);
+    if (image) vmaDestroyImage(ctx.allocator, image, allocation);
+    image = VK_NULL_HANDLE;
+    imageView = VK_NULL_HANDLE;
+    sampler = VK_NULL_HANDLE;
 }
 
 
