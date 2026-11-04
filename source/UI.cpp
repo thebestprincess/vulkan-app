@@ -158,6 +158,8 @@ void update_objects(
                     }
                     ImGui::EndCombo();
                 }
+                
+                ImGui::Checkbox("Complex Sampling Effect", &obj.useComplexSampling);
 
                 if (ImGui::Button(obj.isAnimating ? "Pause Animation" : "Play Animation"))
                 {

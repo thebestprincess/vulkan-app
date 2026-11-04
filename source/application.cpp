@@ -333,7 +333,8 @@ void render(const internal::FrameData& fd)
             .modelMatrix = obj.transform.get_matrix(),
             .normalMatrix = obj.transform.get_normal_matrix(),
             .material = obj.material,
-            .textureDescriptorSet = g_engine->loadedTextures[obj.textureIndex].descriptorSet
+            .textureDescriptorSet = g_engine->loadedTextures[obj.textureIndex].descriptorSet,
+            .useComplexSampling = obj.useComplexSampling
         });
     }
 

@@ -30,6 +30,25 @@ layout(push_constant) uniform PushConstants {
 void main() {
     vec4 texColor = texture(texSampler, fragUV);
 
+    if (pc.enableComplexSampling == 1)
+    {
+        float wave = sin(fragUV.y * 10.0 + pc.time * 3.0) * 0.015;
+        
+        vec2 uvR = fragUV + vec2(wave + 0.01, 0.0);
+        vec2 uvG = fragUV + vec2(wave, 0.0);
+        vec2 uvB = fragUV + vec2(wave - 0.01, 0.0);
+
+        float r = texture(texSampler, uvR).r;
+        float g = texture(texSampler, uvG).g;
+        float b = texture(texSampler, uvB).b;
+        
+        texColor = vec4(r, g, b, 1.0);
+    }
+    else
+    {
+        texColor = texture(texSampler, fragUV);
+    }
+
     vec3 albedo = texColor.rgb * object.albedo.rgb; 
     if (pc.isUnlit == 1) {
         outColor = vec4(albedo, 1.0);

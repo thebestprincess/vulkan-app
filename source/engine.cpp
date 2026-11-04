@@ -521,14 +521,6 @@ void VulkanEngine::draw(VkCommandBuffer cmd, VkFramebuffer framebuffer, const Fr
         if (render_objects.empty()) { return; }
 
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-        vkCmdPushConstants(
-            cmd,
-            pipelineLayout,
-            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, // TODO: vertex?
-            0,
-            sizeof(PushConstants),
-            &pc
-        );
         
         const Mesh* lastMesh = nullptr;
 
@@ -536,6 +528,15 @@ void VulkanEngine::draw(VkCommandBuffer cmd, VkFramebuffer framebuffer, const Fr
         {
             if (current_dynamic_index >= maxObjects) { break; }
 
+            pc.enableComplexSampling = obj.useComplexSampling ? 1U : 0U;
+            vkCmdPushConstants(
+                cmd,
+                pipelineLayout,
+                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, // TODO: vertex?
+                0,
+                sizeof(PushConstants),
+                &pc
+            );
 
             if (lastMesh != obj.mesh)
             {

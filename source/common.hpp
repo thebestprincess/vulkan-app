@@ -103,6 +103,7 @@ struct RenderObjectData final
     glm::mat4 normalMatrix;
     Material material;
     VkDescriptorSet textureDescriptorSet;
+    bool useComplexSampling{false};
 };
 
 struct FrameRenderData final
@@ -206,9 +207,9 @@ public:
 
 struct Transform final
 {
-    glm::vec3 position{0.0f};
-    glm::vec3 rotation{0.0f};
-    glm::vec3 scale{1.0f};
+    glm::vec3 position { 0.0f };
+    glm::vec3 rotation { 0.0f };
+    glm::vec3 scale { 1.0f };
 
     glm::mat4 get_matrix() const
     {
@@ -232,12 +233,13 @@ struct AppObject
     const core::Mesh* mesh;
     Transform transform;
     Material material;
-    size_t textureIndex{0};
+    size_t textureIndex { 0 };
+    bool useComplexSampling { false }; 
 
-    bool isAnimating = false;
-    float animSpeed = 1.0f;
-    float animRadius = 2.0f;
-    float animTime = 0.0f;
+    bool isAnimating { false };
+    float animSpeed { 1.0f };
+    float animRadius { 2.0f };
+    float animTime { 0.0f };
 };
 
 struct AppState
@@ -251,7 +253,7 @@ struct AppState
     std::vector<PointLight> pointLights{};
     std::vector<SpotLight> spotLights{};
 
-    int projectionType{0}; // 0 - Perspective, 1 - Orthographic
+    int projectionType { 0 }; // 0 - Perspective, 1 - Orthographic
     std::vector<AppObject> litObjects;
     std::vector<AppObject> unlitObjects;
     std::vector<AppObject> lineObjects;
