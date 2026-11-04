@@ -177,7 +177,7 @@ public:
     std::vector<std::byte> pixels;
 
     static auto load(const std::filesystem::path& path) -> std::expected<RawImage, std::string>;
-    static RawImage create_fallback_white();
+    static RawImage create_solid(uint8_t r, uint8_t g, uint8_t b, uint8_t a = 255);
 };
 
 class TransferContext final

@@ -19,7 +19,9 @@ layout(std430, set = 0, binding = 2) readonly buffer SpotLightBuffer {
     SpotLight spotLights[];
 };
 
-layout(set = 2, binding = 0) uniform sampler2D texSampler;
+layout(set = 2, binding = 0) uniform sampler2D albedoSampler;
+layout(set = 2, binding = 1) uniform sampler2D specSampler;
+layout(set = 2, binding = 2) uniform sampler2D emissiveSampler;
 
 layout(push_constant) uniform PushConstants {
     uint isUnlit;                 // 1 - unlit, 0 - lit 
@@ -28,32 +30,33 @@ layout(push_constant) uniform PushConstants {
 } pc;
 
 void main() {
-    vec4 texColor = texture(texSampler, fragUV);
-
+    vec2 uvR = fragUV, uvG = fragUV, uvB = fragUV;
+    
     if (pc.enableComplexSampling == 1)
     {
         float wave = sin(fragUV.y * 10.0 + pc.time * 3.0) * 0.015;
-        
-        vec2 uvR = fragUV + vec2(wave + 0.01, 0.0);
-        vec2 uvG = fragUV + vec2(wave, 0.0);
-        vec2 uvB = fragUV + vec2(wave - 0.01, 0.0);
-
-        float r = texture(texSampler, uvR).r;
-        float g = texture(texSampler, uvG).g;
-        float b = texture(texSampler, uvB).b;
-        
-        texColor = vec4(r, g, b, 1.0);
+        uvR = fragUV + vec2(wave + 0.01, 0.0);
+        uvG = fragUV + vec2(wave, 0.0);
+        uvB = fragUV + vec2(wave - 0.01, 0.0);
     }
-    else
+
+    float aR = texture(albedoSampler, uvR).r;
+    float aG = texture(albedoSampler, uvG).g;
+    float aB = texture(albedoSampler, uvB).b;
+    vec3 albedo = vec3(aR, aG, aB) * object.albedo.rgb;     // Albedo
+
+    if (pc.isUnlit == 1)
     {
-        texColor = texture(texSampler, fragUV);
-    }
-
-    vec3 albedo = texColor.rgb * object.albedo.rgb; 
-    if (pc.isUnlit == 1) {
         outColor = vec4(albedo, 1.0);
         return;
     }
+
+    float specMask = texture(specSampler, uvG).r;           // Specular mask
+
+    float eR = texture(emissiveSampler, uvR).r;
+    float eG = texture(emissiveSampler, uvG).g;
+    float eB = texture(emissiveSampler, uvB).b;
+    vec3 emissiveColor = vec3(eR, eG, eB);                  // Emissive color
 
     vec3 N = normalize(fragNormal);
     vec3 V = normalize(scene.cameraPos.xyz - fragPos);
@@ -66,7 +69,7 @@ void main() {
     
     vec3 H_dir = normalize(L_dir + V);
     float spec_dir = pow(max(dot(N, H_dir), 0.0), object.shininess);
-    vec3 specular_dir = spec_dir * object.specularColor.rgb * scene.dirLightColor.rgb;
+    vec3 specular_dir = spec_dir * object.specularColor.rgb * scene.dirLightColor.rgb * specMask;
     
     finalColor += (diffuse_dir + specular_dir) * scene.dirLightColor.a;
 
@@ -88,7 +91,7 @@ void main() {
         vec3 H = normalize(L + V);
         float specFactor = pow(max(dot(N, H), 0.0), object.shininess);
         if (dot(N, L) <= 0.0) specFactor = 0.0; 
-        vec3 specular = specFactor * object.specularColor.rgb * light.color.rgb;
+        vec3 specular = specFactor * object.specularColor.rgb * light.color.rgb * specMask;
 
         finalColor += (diffuse + specular) * attenuation * light.color.a;
     }
@@ -114,10 +117,12 @@ void main() {
         vec3 H = normalize(L + V);
         float specFactor = pow(max(dot(N, H), 0.0), object.shininess);
         if (dot(N, L) <= 0.0) specFactor = 0.0; 
-        vec3 specular = specFactor * object.specularColor.rgb * light.color.rgb * angularAttenuation;
+        vec3 specular = specFactor * object.specularColor.rgb * light.color.rgb * angularAttenuation * specMask;
 
         finalColor += (diffuse + specular) * distAttenuation * light.color.a;
     }
+
+    finalColor += emissiveColor;
 
     outColor = vec4(finalColor, 1.0);
 }

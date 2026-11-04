@@ -252,17 +252,44 @@ bool initialize()
         .quadratic = 0.44f
     });
 
-    g_engine->load_texture(
-        std::filesystem::current_path() / "textures" / "wood.jpg",
-        "Wood"
-    );
-    g_engine->load_texture(
+    g_engine->load_material("Default", "", "", "");
+    
+    g_engine->load_material(
+        "Metal",
         std::filesystem::current_path() / "textures" / "metal.jpg",
-        "Metal"
+        std::filesystem::current_path() / "textures" / "metal_specular.png",
+        std::filesystem::current_path() / "textures" / "metal_emissive.png"
     );
 
-    g_state.litObjects[4].textureIndex = 1;
+    g_engine->load_material(
+        "Rust Metal",
+        std::filesystem::current_path() / "textures" / "rust_metal.png",
+        std::filesystem::current_path() / "textures" / "rust_metal_specular.png",
+        ""
+    );
 
+    g_engine->load_material(
+        "Lava",
+        std::filesystem::current_path() / "textures" / "lava.png",
+        std::filesystem::current_path() / "textures" / "lava_specular.png",
+        std::filesystem::current_path() / "textures" / "lava_emissive.png"
+    );
+
+    g_engine->load_material(
+        "Wood",
+        std::filesystem::current_path() / "textures" / "wood.jpg",
+        "",
+        std::filesystem::current_path() / "textures" / "wood_emissive.jpg"
+    );
+
+    g_engine->load_material(
+        "Ahegao",
+        std::filesystem::current_path() / "textures" / "ahegao.jpg",
+        "",
+        std::filesystem::current_path() / "textures" / "ahegao_emissive.png"
+    );
+
+    g_state.litObjects[4].materialIndex = 1;
 
     return true;
 }
@@ -333,7 +360,7 @@ void render(const internal::FrameData& fd)
             .modelMatrix = obj.transform.get_matrix(),
             .normalMatrix = obj.transform.get_normal_matrix(),
             .material = obj.material,
-            .textureDescriptorSet = g_engine->loadedTextures[obj.textureIndex].descriptorSet,
+            .materialDescriptorSet = g_engine->loadedMaterials[obj.materialIndex].descriptorSet,
             .useComplexSampling = obj.useComplexSampling
         });
     }
@@ -357,7 +384,7 @@ void render(const internal::FrameData& fd)
                 .modelMatrix = model,
                 .normalMatrix = glm::mat4(1.0f),
                 .material = unlitMat,
-                .textureDescriptorSet = g_engine->loadedTextures[0].descriptorSet
+                .materialDescriptorSet = g_engine->loadedMaterials[0].descriptorSet
             });
         }
     }
@@ -378,7 +405,7 @@ void render(const internal::FrameData& fd)
                 .modelMatrix = model,
                 .normalMatrix = glm::mat4(1.0f),
                 .material = unlitMat,
-                .textureDescriptorSet = g_engine->loadedTextures[0].descriptorSet
+                .materialDescriptorSet = g_engine->loadedMaterials[0].descriptorSet
             });
         }
         
@@ -409,7 +436,7 @@ void render(const internal::FrameData& fd)
                 .modelMatrix = outerModel,
                 .normalMatrix = glm::mat4(1.0f),
                 .material = lineMat,
-                .textureDescriptorSet = g_engine->loadedTextures[0].descriptorSet
+                .materialDescriptorSet = g_engine->loadedMaterials[0].descriptorSet
             });
 
             renderLineObjects.push_back({
@@ -417,7 +444,7 @@ void render(const internal::FrameData& fd)
                 .modelMatrix = innerModel,
                 .normalMatrix = glm::mat4(1.0f),
                 .material = lineMat,
-                .textureDescriptorSet = g_engine->loadedTextures[0].descriptorSet
+                .materialDescriptorSet = g_engine->loadedMaterials[0].descriptorSet
             });
         }
     }

@@ -31,11 +31,21 @@ public:
     
     VkDescriptorSet sceneDescriptorSet;
 
+    Texture whiteTexture; 
+    Texture blackTexture;
     TransferContext transferContext;
     VkDescriptorSetLayout textureSetLayout;
-    std::vector<TextureResource> loadedTextures;
-    Texture upload_texture(const std::filesystem::path& path);
-    size_t load_texture(const std::filesystem::path& path, std::string name);
+    std::vector<MaterialResource> loadedMaterials;
+    Texture upload_texture(const RawImage& rawImg);
+    Texture upload_texture_from_file(
+        const std::filesystem::path& path
+    );
+    size_t load_material(
+        std::string name,
+        std::filesystem::path albedo,
+        std::filesystem::path specular = "",
+        std::filesystem::path emissive = ""
+    );
 
     Mesh cubeMesh;
     Mesh coneMesh;

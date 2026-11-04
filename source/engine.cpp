@@ -107,41 +107,57 @@ namespace graphics::core
 {
 VulkanEngine::~VulkanEngine() { cleanup(); }
 
-size_t VulkanEngine::load_texture(
-    const std::filesystem::path& path,
-    std::string name
-) {
-    Texture tex = upload_texture(path);
+size_t VulkanEngine::load_material(
+    std::string name,
+    std::filesystem::path albedo,
+    std::filesystem::path specular,
+    std::filesystem::path emissive
+)
+{
+    MaterialResource mat;
+    mat.name = std::move(name);
 
-    VkDescriptorImageInfo imageInfo {
-        .sampler = tex.sampler,
-        .imageView = tex.imageView,
-        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    mat.albedo = upload_texture_from_file(albedo);
+    mat.specular = upload_texture_from_file(specular);
+    mat.emissive = upload_texture_from_file(emissive);
+
+    auto get_info = [](const Texture& tex, const Texture& fallback) -> VkDescriptorImageInfo
+    {
+        const Texture& t = (tex.image != VK_NULL_HANDLE) ? tex : fallback;
+        return { t.sampler, t.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
     };
 
-    VkDescriptorSet texSet;
-    DescriptorBuilder builder;
-    builder.bind_image(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, imageInfo)
-           .build_existing_layout(internal::context.device, descriptorAllocator, textureSetLayout, texSet);
+    VkDescriptorImageInfo albedoInfo = get_info(mat.albedo, whiteTexture);
+    VkDescriptorImageInfo specInfo = get_info(mat.specular, blackTexture);
+    VkDescriptorImageInfo emissInfo = get_info(mat.emissive, blackTexture);
 
-    loadedTextures.push_back({ std::move(name), std::move(tex), texSet });
-    
-    return loadedTextures.size() - 1;
+    DescriptorBuilder builder;
+    builder.bind_image(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, albedoInfo)
+           .bind_image(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, specInfo)
+           .bind_image(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, emissInfo)
+           .build_existing_layout(internal::context.device, descriptorAllocator, textureSetLayout, mat.descriptorSet);
+
+    loadedMaterials.push_back(std::move(mat));
+    return loadedMaterials.size() - 1;
 }
 
-Texture VulkanEngine::upload_texture(const std::filesystem::path& path)
+Texture VulkanEngine::upload_texture_from_file(
+    const std::filesystem::path& path
+)
 {
-    RawImage rawImg;
+    if (path.empty()) return Texture{};
+
     auto rawImgOpt = RawImage::load(path);
-    if (!rawImgOpt.has_value())
-    {
-        std::println(stderr, "WARNING: {}. Using fallback white texture.", rawImgOpt.error());
-        rawImg = RawImage::create_fallback_white(); 
+    if (!rawImgOpt.has_value()) {
+        std::println(stderr, "Warning: {}. Using fallback.", rawImgOpt.error());
+        return Texture{}; 
     }
-    else
-    {
-        rawImg = std::move(rawImgOpt.value());
-    }
+    return upload_texture(rawImgOpt.value());
+}
+
+
+Texture VulkanEngine::upload_texture(const RawImage& rawImg)
+{
     auto& ctx = internal::context;
     
     Buffer stagingBuffer = Buffer::create(
@@ -323,6 +339,8 @@ void VulkanEngine::init()
     init_descriptors();
     
     transferContext.init(internal::context.graphics_queue_index);
+    whiteTexture = upload_texture(RawImage::create_solid(255, 255, 255, 255));
+    blackTexture = upload_texture(RawImage::create_solid(0, 0, 0, 255));
 
     Shader mainVertShader(std::filesystem::current_path() / "shaders" / "main.vert.spv");
     Shader mainFragShader(std::filesystem::current_path() / "shaders" / "main.frag.spv");
@@ -339,19 +357,22 @@ void VulkanEngine::init()
         .size = sizeof(PushConstants)
     };
 
-    VkDescriptorSetLayoutBinding texBinding
+    VkDescriptorSetLayoutBinding texBindings[3];
+    for (uint32_t i = 0; i < 3; ++i)
     {
-        .binding = 0,
-        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .descriptorCount = 1,
-        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
-        .pImmutableSamplers = nullptr
-    };
+        texBindings[i] = {
+            .binding = i,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+            .pImmutableSamplers = nullptr
+        };
+    }
     VkDescriptorSetLayoutCreateInfo texLayoutInfo
     {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = 1,
-        .pBindings = &texBinding
+        .bindingCount = 3,
+        .pBindings = texBindings
     };
     vkCreateDescriptorSetLayout(internal::context.device, &texLayoutInfo, nullptr, &textureSetLayout);
 
@@ -412,8 +433,6 @@ void VulkanEngine::init()
            .set_topology(VK_PRIMITIVE_TOPOLOGY_LINE_LIST)
            .set_polygon_mode(VK_POLYGON_MODE_FILL); 
     linePipeline = builder.build_pipeline(internal::context.device);
-    
-    load_texture("", "Default White");
 }
 
 void VulkanEngine::cleanup()
@@ -564,7 +583,7 @@ void VulkanEngine::draw(VkCommandBuffer cmd, VkFramebuffer framebuffer, const Fr
             {
                 sceneDescriptorSet,
                 dynamicObjectDescriptorSet,
-                obj.textureDescriptorSet
+                obj.materialDescriptorSet
             };
             vkCmdBindDescriptorSets(
                 cmd,

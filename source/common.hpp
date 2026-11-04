@@ -102,7 +102,7 @@ struct RenderObjectData final
     glm::mat4 modelMatrix;
     glm::mat4 normalMatrix;
     Material material;
-    VkDescriptorSet textureDescriptorSet;
+    VkDescriptorSet materialDescriptorSet;
     bool useComplexSampling{false};
 };
 
@@ -117,11 +117,13 @@ struct FrameRenderData final
     double time;
 };
 
-struct TextureResource final
+struct MaterialResource final
 {
     std::string name;
-    Texture texture;
-    VkDescriptorSet descriptorSet { VK_NULL_HANDLE };
+    Texture albedo;
+    Texture specular;
+    Texture emissive;
+    VkDescriptorSet descriptorSet{VK_NULL_HANDLE};
 };
 
 
@@ -233,7 +235,7 @@ struct AppObject
     const core::Mesh* mesh;
     Transform transform;
     Material material;
-    size_t textureIndex { 0 };
+    size_t materialIndex { 0 };
     bool useComplexSampling { false }; 
 
     bool isAnimating { false };

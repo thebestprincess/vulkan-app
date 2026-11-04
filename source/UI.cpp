@@ -145,14 +145,14 @@ void update_objects(
                 ImGui::ColorEdit3("Specular", glm::value_ptr(obj.material.specularColor));
                 ImGui::SliderFloat("Shininess", &obj.material.shininess, 1.0f, 256.0f);
 
-                if (ImGui::BeginCombo("Texture", g_engine.loadedTextures[obj.textureIndex].name.c_str()))
+                if (ImGui::BeginCombo("Texture", g_engine.loadedMaterials[obj.materialIndex].name.c_str()))
                 {
-                    for (size_t i = 0; i < g_engine.loadedTextures.size(); ++i)
+                    for (size_t i = 0; i < g_engine.loadedMaterials.size(); ++i)
                     {
-                        bool isSelected = (obj.textureIndex == i);
-                        if (ImGui::Selectable(g_engine.loadedTextures[i].name.c_str(), isSelected))
+                        bool isSelected = (obj.materialIndex == i);
+                        if (ImGui::Selectable(g_engine.loadedMaterials[i].name.c_str(), isSelected))
                         {
-                            obj.textureIndex = i;
+                            obj.materialIndex = i;
                         }
                         if (isSelected) ImGui::SetItemDefaultFocus();
                     }

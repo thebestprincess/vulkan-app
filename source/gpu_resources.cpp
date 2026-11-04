@@ -20,9 +20,12 @@ Buffer::Buffer(Buffer&& other) noexcept
 
 Buffer& Buffer::operator=(Buffer&& other) noexcept
 {
-    destroy();
-    std::swap(buffer, other.buffer);
-    std::swap(allocation, other.allocation);
+    if (this != &other)
+    {
+        destroy();
+        std::swap(buffer, other.buffer);
+        std::swap(allocation, other.allocation);
+    }
     return *this;
 }
 
@@ -81,8 +84,11 @@ Shader::Shader(Shader&& other) noexcept
 
 Shader& Shader::operator=(Shader&& other) noexcept
 {
-    destroy();
-    std::swap(shader, other.shader);
+    if (this != &other)
+    {
+        destroy();
+        std::swap(shader, other.shader);
+    }
     return *this;
 }
 
@@ -407,15 +413,18 @@ auto RawImage::load(
     return img;
 }
 
-RawImage RawImage::create_fallback_white()
+RawImage RawImage::create_solid(
+    uint8_t r,
+    uint8_t g,
+    uint8_t b,
+    uint8_t a
+)
 {
-    RawImage img
-    {
-        .width = 1,
-        .height = 1,
-        .channels = 4
-    };
-    img.pixels = { std::byte{255}, std::byte{255}, std::byte{255}, std::byte{255} };
+    RawImage img { .width = 1, .height = 1, .channels = 4 };
+    img.pixels.push_back(static_cast<std::byte>(r));
+    img.pixels.push_back(static_cast<std::byte>(g));
+    img.pixels.push_back(static_cast<std::byte>(b));
+    img.pixels.push_back(static_cast<std::byte>(a));
     return img;
 }
 
@@ -472,11 +481,15 @@ Texture& Texture::operator=(
     Texture&& other
 ) noexcept
 {
-    destroy();
-    std::swap(image, other.image);
-    std::swap(allocation, other.allocation);
-    std::swap(imageView, other.imageView);
-    std::swap(sampler, other.sampler);
+    if (this != &other)
+    {
+        destroy();
+        std::swap(image, other.image);
+        std::swap(allocation, other.allocation);
+        std::swap(imageView, other.imageView);
+        std::swap(sampler, other.sampler);
+    }
+
     return *this;
 }
 

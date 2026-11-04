@@ -11,7 +11,6 @@ add_executable(${PROJECT_NAME}
 	source/gpu_resources.cpp
 	source/pipeline_builder.cpp
 	source/UI.cpp
-	source/scene.cpp
 )
 
 if(LINUX)
