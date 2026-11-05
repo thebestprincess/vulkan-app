@@ -37,7 +37,8 @@ public:
         VmaAllocator allocator,
         size_t allocSize,
         VkBufferUsageFlags usage,
-        VmaMemoryUsage memoryUsage
+        VmaMemoryUsage memoryUsage,
+        VmaAllocationCreateFlags allocFlags = 0
     );
 
     template<typename T>

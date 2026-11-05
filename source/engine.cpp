@@ -16,89 +16,56 @@
 namespace graphics::core::geometry
 {
 
-void generate_cone_mesh(Mesh& mesh)
+struct MeshData
 {
-    std::vector<Vertex> coneVerts;
-    std::vector<uint32_t> coneIndices;
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
+};
 
-    coneVerts.push_back(
-        {
-            glm::vec3(0.0f, 0.0f, 0.0f),
-            glm::vec3(0.0f),
-            glm::vec2(0.0f)
-        }
-    ); 
+MeshData generate_cone_mesh()
+{
+    MeshData data{};
+
+    data.vertices.push_back({
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        glm::vec3(0.0f),
+        glm::vec2(0.0f)
+    }); 
 
     const int segments { 16 };
-    for (int i = 0; i < segments; ++i)
+    for (int i { 0 }; i < segments; ++i)
     {
         float angle { static_cast<float>(i) / segments * 2.0f * glm::pi<float>() };
-        coneVerts.push_back({
-            glm::vec3(std::cos(angle), std::sin(angle), -1.0f), 
-            glm::vec3(0.0f),
+        data.vertices.push_back({
+            glm::vec3(std::cos(angle), std::sin(angle), -1.0f), glm::vec3(0.0f),
             glm::vec2(std::cos(angle)*0.5f + 0.5f, std::sin(angle)*0.5f + 0.5f)
         });
     }
 
-    for (int i = 1; i <= segments; ++i)
+    for (int i { 1 }; i <= segments; ++i)
     {
         int next { (i % segments) + 1 };
-        coneIndices.push_back(0);
-        coneIndices.push_back(i);
-        coneIndices.push_back(i);
-        coneIndices.push_back(next);
+        data.indices.push_back(0);
+        data.indices.push_back(i);
+        data.indices.push_back(i);
+        data.indices.push_back(next);
     }
 
-    auto& alloc = internal::context.allocator;
-
-    mesh.vertexBuffer = Buffer::create(
-        alloc,
-        coneVerts.size() * sizeof(Vertex),
-        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        VMA_MEMORY_USAGE_AUTO
-    );
-    mesh.vertexBuffer.upload_data<Vertex>(alloc, coneVerts);
-
-    mesh.indexBuffer = Buffer::create(
-        alloc,
-        coneIndices.size() * sizeof(uint32_t),
-        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-        VMA_MEMORY_USAGE_AUTO
-    );
-    mesh.indexBuffer.upload_data<uint32_t>(alloc, std::span{coneIndices});
-
-    mesh.indexCount = coneIndices.size();
+    return data;
 }
 
-void generate_plane_mesh(Mesh& mesh)
+MeshData generate_plane_mesh()
 {
-    const std::array<Vertex, 4> planeVerts = {
-        Vertex{{-0.5f, 0.0f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-        Vertex{{ 0.5f, 0.0f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-        Vertex{{ 0.5f, 0.0f,  0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f}},
-        Vertex{{-0.5f, 0.0f,  0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f}}
+    MeshData data;
+    data.vertices = {
+        {{-0.5f, 0.0f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+        {{ 0.5f, 0.0f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+        {{ 0.5f, 0.0f,  0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f}},
+        {{-0.5f, 0.0f,  0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f}}
     };
-    const std::array<uint32_t, 6> planeIndices = { 0, 2, 1, 2, 0, 3 };
+    data.indices = { 0, 2, 1, 2, 0, 3 };
 
-    auto& alloc = internal::context.allocator;
-
-    mesh.vertexBuffer = Buffer::create(
-        alloc,
-        sizeof(planeVerts),
-        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        VMA_MEMORY_USAGE_AUTO
-    );
-    mesh.vertexBuffer.upload_data<Vertex>(alloc, planeVerts);
-
-    mesh.indexBuffer = Buffer::create(
-        alloc,
-        sizeof(planeIndices),
-        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-        VMA_MEMORY_USAGE_AUTO
-    );
-    mesh.indexBuffer.upload_data<uint32_t>(alloc, planeIndices);
-
-    mesh.indexCount = planeIndices.size();
+    return data;
 }
 
 } // namespace graphics::geometry
@@ -145,13 +112,18 @@ Texture VulkanEngine::upload_texture_from_file(
     const std::filesystem::path& path
 )
 {
-    if (path.empty()) return Texture{};
+    if (path.empty())
+    {
+        return Texture{};
+    }
 
-    auto rawImgOpt = RawImage::load(path);
-    if (!rawImgOpt.has_value()) {
+    auto rawImgOpt { RawImage::load(path) };
+    if (!rawImgOpt.has_value())
+    {
         std::println(stderr, "Warning: {}. Using fallback.", rawImgOpt.error());
         return Texture{}; 
     }
+
     return upload_texture(rawImgOpt.value());
 }
 
@@ -159,12 +131,18 @@ Texture VulkanEngine::upload_texture_from_file(
 Texture VulkanEngine::upload_texture(const RawImage& rawImg)
 {
     auto& ctx = internal::context;
-    
+
+    VmaAllocationCreateFlags mappedFlags
+    {
+        VMA_ALLOCATION_CREATE_MAPPED_BIT
+        | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
+    };   
     Buffer stagingBuffer = Buffer::create(
         ctx.allocator,
         rawImg.pixels.size(),
         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VMA_MEMORY_USAGE_AUTO
+        VMA_MEMORY_USAGE_AUTO,
+        mappedFlags
     );
     stagingBuffer.upload_data<std::byte>(ctx.allocator, rawImg.pixels);
 
@@ -248,9 +226,72 @@ Texture VulkanEngine::upload_texture(const RawImage& rawImg)
     return tex; 
 }
 
+void VulkanEngine::upload_mesh(
+    std::span<const Vertex> vertices,
+    std::span<const uint32_t> indices,
+    Mesh& outMesh
+)
+{
+    auto& ctx { internal::context };
+    
+    VmaAllocationCreateFlags mappedFlags
+    {
+        VMA_ALLOCATION_CREATE_MAPPED_BIT
+        | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
+    };
+
+    Buffer stagingVerts = Buffer::create(
+        ctx.allocator,
+        vertices.size_bytes(),
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VMA_MEMORY_USAGE_AUTO,
+        mappedFlags
+    );
+    stagingVerts.upload_data(ctx.allocator, vertices);
+
+    Buffer stagingIndices = Buffer::create(
+        ctx.allocator,
+        indices.size_bytes(),
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VMA_MEMORY_USAGE_AUTO,
+        mappedFlags
+    );
+    stagingIndices.upload_data(ctx.allocator, indices);
+
+    outMesh.vertexBuffer = Buffer::create(
+        ctx.allocator,
+        vertices.size_bytes(),
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
+        | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VMA_MEMORY_USAGE_AUTO,
+        0
+    );
+
+    outMesh.indexBuffer = Buffer::create(
+        ctx.allocator,
+        indices.size_bytes(),
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT
+        | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VMA_MEMORY_USAGE_AUTO,
+        0
+    );
+    outMesh.indexCount = static_cast<uint32_t>(indices.size());
+
+    transferContext.execute(
+        ctx.graphics_queue,
+        [&](VkCommandBuffer cmd)
+        {
+            VkBufferCopy vertCopy { .srcOffset = 0, .dstOffset = 0, .size = vertices.size_bytes() };
+            vkCmdCopyBuffer(cmd, stagingVerts.buffer, outMesh.vertexBuffer.buffer, 1, &vertCopy);
+
+            VkBufferCopy indCopy { .srcOffset = 0, .dstOffset = 0, .size = indices.size_bytes() };
+            vkCmdCopyBuffer(cmd, stagingIndices.buffer, outMesh.indexBuffer.buffer, 1, &indCopy);
+        }
+    );
+}
+
 void VulkanEngine::init_buffers()
 {
-    const auto& allocator = internal::context.allocator;    
     const auto& ctx = internal::context;
 
     VkPhysicalDeviceProperties properties;
@@ -263,54 +304,48 @@ void VulkanEngine::init_buffers()
         dynamicAlignment = (dynamicAlignment + minUboAlignment - 1) & ~(minUboAlignment - 1);
     }
 
+    VmaAllocationCreateFlags mappedFlags 
+    {
+        VMA_ALLOCATION_CREATE_MAPPED_BIT
+        | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
+    };
+
     dynamicObjectBuffer = Buffer::create(
         ctx.allocator,
         maxObjects * dynamicAlignment,
         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-        VMA_MEMORY_USAGE_AUTO
+        VMA_MEMORY_USAGE_AUTO,
+        mappedFlags
     );
-
-
-    cubeMesh.vertexBuffer = Buffer::create(
-        allocator,
-        sizeof(vertices),
-        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        VMA_MEMORY_USAGE_AUTO
-    );
-    cubeMesh.vertexBuffer.upload_data<Vertex>(allocator, vertices);
-
-    cubeMesh.indexBuffer = Buffer::create(
-        allocator,
-        sizeof(indices),
-        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-        VMA_MEMORY_USAGE_AUTO
-    );
-    cubeMesh.indexBuffer.upload_data<uint32_t>(allocator, indices);
-
-    cubeMesh.indexCount = sizeof(indices) / sizeof(indices[0]);
-
-    geometry::generate_cone_mesh(coneMesh);
-    geometry::generate_plane_mesh(planeMesh);
-
     sceneUniformBuffer = Buffer::create(
-        allocator,
+        ctx.allocator,
         sizeof(SceneUniform),
         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-        VMA_MEMORY_USAGE_AUTO
+        VMA_MEMORY_USAGE_AUTO,
+        mappedFlags
     ); 
-
     pointLightBuffer = Buffer::create(
-        allocator, 
+        ctx.allocator, 
         sizeof(PointLight) * maxPointLights, 
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, 
-        VMA_MEMORY_USAGE_AUTO
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        VMA_MEMORY_USAGE_AUTO,
+        mappedFlags
     );
     spotLightBuffer = Buffer::create(
-        allocator, 
+        ctx.allocator,
         sizeof(SpotLight) * maxSpotLights, 
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, 
-        VMA_MEMORY_USAGE_AUTO
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        VMA_MEMORY_USAGE_AUTO,
+        mappedFlags
     );
+
+    upload_mesh(vertices, indices, cubeMesh);
+
+    auto coneData = geometry::generate_cone_mesh();
+    upload_mesh(coneData.vertices, coneData.indices, coneMesh);
+
+    auto planeData = geometry::generate_plane_mesh();
+    upload_mesh(planeData.vertices, planeData.indices, planeMesh);
 }
 
 void VulkanEngine::init_descriptors()
@@ -335,10 +370,10 @@ void VulkanEngine::init_descriptors()
 void VulkanEngine::init()
 {
     descriptorAllocator.init(graphics::internal::context.device);
+    transferContext.init(internal::context.graphics_queue_index);
     init_buffers();
     init_descriptors();
     
-    transferContext.init(internal::context.graphics_queue_index);
     whiteTexture = upload_texture(RawImage::create_solid(255, 255, 255, 255));
     blackTexture = upload_texture(RawImage::create_solid(0, 0, 0, 255));
 

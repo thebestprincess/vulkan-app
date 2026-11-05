@@ -36,8 +36,10 @@ Buffer Buffer::create(
     VmaAllocator allocator,
     size_t allocSize,
     VkBufferUsageFlags usage,
-    VmaMemoryUsage memoryUsage
-) {
+    VmaMemoryUsage memoryUsage,
+    VmaAllocationCreateFlags allocFlags
+)
+{
     Buffer b;
     VkBufferCreateInfo bufferInfo
     {
@@ -49,7 +51,7 @@ Buffer Buffer::create(
 
     VmaAllocationCreateInfo vmaAllocInfo
     {
-        .flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
+        .flags = allocFlags,
         .usage = memoryUsage,
     };
 

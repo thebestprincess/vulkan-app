@@ -50,6 +50,11 @@ public:
     Mesh cubeMesh;
     Mesh coneMesh;
     Mesh planeMesh;
+    void upload_mesh(
+        std::span<const Vertex> vertices,
+        std::span<const uint32_t> indices,
+        Mesh& outMesh
+    );
 
     static constexpr size_t maxObjects { consts::maxObjects };
     size_t dynamicAlignment { 0uz };
