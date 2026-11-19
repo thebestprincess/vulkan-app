@@ -21,6 +21,7 @@ void update_global_light(
         ImGui::Text("Directional Light");
         ImGui::SliderFloat3("Direction", glm::value_ptr(g_state.dirLightDir), -1.0f, 1.0f);
         ImGui::ColorEdit3("Dir Color", glm::value_ptr(g_state.dirLightColor));
+        ImGui::SliderFloat("Dir Intensity", &g_state.dirLightColor.a, 0.0f, 3.0f);
         if (ImGui::Button("Show spot lights")) { g_state.show_spot_lights = !g_state.show_spot_lights; }
         if (ImGui::Button("Show point lights")) { g_state.show_point_lights = !g_state.show_point_lights; }
     }
@@ -173,6 +174,23 @@ void update_objects(
     }
 }
 
+void update_shadows(
+    graphics::app::AppState& g_state
+)
+{
+    if (ImGui::CollapsingHeader("Shadows", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Enable Directional Shadow", &g_state.shadowSettings.enableDirShadow);
+        ImGui::SliderFloat("Ortho Area Size", &g_state.shadowSettings.orthoSize, 2.0f, 25.0f);
+        ImGui::SliderFloat("Light Distance", &g_state.shadowSettings.lightDistance, 5.0f, 30.0f);
+        ImGui::SliderFloat("Depth Bias Constant", &g_state.shadowSettings.depthBiasConstant, 0.0f, 10.0f);
+        ImGui::SliderFloat("Depth Bias Slope", &g_state.shadowSettings.depthBiasSlope, 0.0f, 10.0f);
+
+        ImGui::Separator();
+        ImGui::Checkbox("Enable Spot Shadows", &g_state.shadowSettings.enableSpotShadows);
+    }
+}
+
 } // namespace
 
 namespace graphics::app::ui
@@ -227,6 +245,7 @@ void update_imgui(AppState& g_state, core::VulkanEngine& g_engine)
     update_point_lights(g_state);
     update_spot_lights(g_state);
     update_objects(g_state, g_engine);
+    update_shadows(g_state);
     
     ImGui::End();
 }

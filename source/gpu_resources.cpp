@@ -506,5 +506,488 @@ void Texture::destroy()
     sampler = VK_NULL_HANDLE;
 }
 
+namespace
+{
+
+VkFormat select_shadow_depth_format(VkPhysicalDevice physicalDevice)
+{
+    constexpr VkFormat candidates[] {
+        VK_FORMAT_D32_SFLOAT,
+        VK_FORMAT_D16_UNORM,
+    };
+
+    for (VkFormat fmt : candidates)
+    {
+        VkFormatProperties props{};
+        vkGetPhysicalDeviceFormatProperties(physicalDevice, fmt, &props);
+
+        const bool supportsDepth =
+            (props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0;
+        const bool supportsShadowSample =
+            (props.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) != 0;
+
+        if (supportsDepth && supportsShadowSample)
+        {
+            return fmt;
+        }
+    }
+
+    return VK_FORMAT_D32_SFLOAT;
+}
+
+} // namespace
+
+ShadowMap::~ShadowMap()
+{
+    destroy();
+}
+
+ShadowMap::ShadowMap(ShadowMap&& other) noexcept
+{
+    std::swap(image, other.image);
+    std::swap(allocation, other.allocation);
+    std::swap(imageView, other.imageView);
+    std::swap(sampler, other.sampler);
+    std::swap(extent, other.extent);
+    std::swap(format, other.format);
+    std::swap(currentLayout, other.currentLayout);
+}
+
+ShadowMap& ShadowMap::operator=(ShadowMap&& other) noexcept
+{
+    if (this != &other)
+    {
+        destroy();
+        std::swap(image, other.image);
+        std::swap(allocation, other.allocation);
+        std::swap(imageView, other.imageView);
+        std::swap(sampler, other.sampler);
+        std::swap(extent, other.extent);
+        std::swap(format, other.format);
+        std::swap(currentLayout, other.currentLayout);
+    }
+    return *this;
+}
+
+ShadowMap ShadowMap::create(uint32_t width, uint32_t height)
+{
+    auto& ctx = graphics::internal::context;
+
+    ShadowMap sm;
+    sm.extent = { width, height };
+    sm.format = select_shadow_depth_format(ctx.physical_device);
+
+    const VkImageCreateInfo imageInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = sm.format,
+        .extent = { width, height, 1 },
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    };
+
+    const VmaAllocationCreateInfo allocInfo
+    {
+        .usage = VMA_MEMORY_USAGE_AUTO,
+    };
+
+    if (vmaCreateImage(ctx.allocator, &imageInfo, &allocInfo,
+                       &sm.image, &sm.allocation, nullptr) != VK_SUCCESS)
+    {
+        std::println(stderr, "Failed to create shadow map image!");
+        return sm;
+    }
+
+    const VkImageViewCreateInfo viewInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = sm.image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = sm.format,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        },
+    };
+
+    if (vkCreateImageView(ctx.device, &viewInfo, nullptr, &sm.imageView) != VK_SUCCESS)
+    {
+        std::println(stderr, "Failed to create shadow map image view!");
+    }
+
+    const VkSamplerCreateInfo samplerInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = VK_FILTER_LINEAR,
+        .minFilter = VK_FILTER_LINEAR,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+        .mipLodBias = 0.0f,
+        .anisotropyEnable = VK_FALSE,
+        .maxAnisotropy = 1.0f,
+        .compareEnable = VK_TRUE,
+        .compareOp = VK_COMPARE_OP_LESS,
+        .minLod = 0.0f,
+        .maxLod = 1.0f,
+        .borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE,
+        .unnormalizedCoordinates = VK_FALSE,
+    };
+
+    if (vkCreateSampler(ctx.device, &samplerInfo, nullptr, &sm.sampler) != VK_SUCCESS)
+    {
+        std::println(stderr, "Failed to create shadow map sampler!");
+    }
+
+    return sm;
+}
+
+void ShadowMap::transition_to_depth_attachment(VkCommandBuffer cmd)
+{
+    const bool fromShaderRead = (currentLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    const VkPipelineStageFlags srcStage = fromShaderRead
+        ? VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+        : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+
+    const VkAccessFlags srcAccess = fromShaderRead
+        ? VK_ACCESS_SHADER_READ_BIT
+        : 0;
+
+    const VkImageMemoryBarrier barrier
+    {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = srcAccess,
+        .dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+        .oldLayout = currentLayout,
+        .newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        },
+    };
+
+    vkCmdPipelineBarrier(
+        cmd,
+        srcStage,
+        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier
+    );
+
+    currentLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+}
+
+void ShadowMap::transition_to_shader_read(VkCommandBuffer cmd)
+{
+    const VkImageMemoryBarrier barrier
+    {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+        .oldLayout = currentLayout,
+        .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        },
+    };
+
+    vkCmdPipelineBarrier(
+        cmd,
+        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier
+    );
+
+    currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+}
+
+void ShadowMap::destroy()
+{
+    auto& ctx = graphics::internal::context;
+    if (sampler != VK_NULL_HANDLE)
+    {
+        vkDestroySampler(ctx.device, sampler, nullptr);
+        sampler = VK_NULL_HANDLE;
+    }
+    if (imageView != VK_NULL_HANDLE)
+    {
+        vkDestroyImageView(ctx.device, imageView, nullptr);
+        imageView = VK_NULL_HANDLE;
+    }
+    if (image != VK_NULL_HANDLE)
+    {
+        vmaDestroyImage(ctx.allocator, image, allocation);
+        image = VK_NULL_HANDLE;
+        allocation = VK_NULL_HANDLE;
+    }
+}
+
+ShadowMapArray::~ShadowMapArray()
+{
+    destroy();
+}
+
+ShadowMapArray::ShadowMapArray(ShadowMapArray&& other) noexcept
+{
+    std::swap(image, other.image);
+    std::swap(allocation, other.allocation);
+    std::swap(arrayImageView, other.arrayImageView);
+    std::swap(layerImageViews, other.layerImageViews);
+    std::swap(sampler, other.sampler);
+    std::swap(extent, other.extent);
+    std::swap(format, other.format);
+    std::swap(layerCount, other.layerCount);
+    std::swap(currentLayout, other.currentLayout);
+}
+
+ShadowMapArray& ShadowMapArray::operator=(ShadowMapArray&& other) noexcept
+{
+    if (this != &other)
+    {
+        destroy();
+        std::swap(image, other.image);
+        std::swap(allocation, other.allocation);
+        std::swap(arrayImageView, other.arrayImageView);
+        std::swap(layerImageViews, other.layerImageViews);
+        std::swap(sampler, other.sampler);
+        std::swap(extent, other.extent);
+        std::swap(format, other.format);
+        std::swap(layerCount, other.layerCount);
+        std::swap(currentLayout, other.currentLayout);
+    }
+    return *this;
+}
+
+ShadowMapArray ShadowMapArray::create(uint32_t width, uint32_t height, uint32_t layers)
+{
+    auto& ctx = graphics::internal::context;
+
+    ShadowMapArray sma;
+    sma.extent = { width, height };
+    sma.layerCount = layers;
+    sma.format = select_shadow_depth_format(ctx.physical_device);
+
+    const VkImageCreateInfo imageInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = sma.format,
+        .extent = { width, height, 1 },
+        .mipLevels = 1,
+        .arrayLayers = layers,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    };
+
+    const VmaAllocationCreateInfo allocInfo
+    {
+        .usage = VMA_MEMORY_USAGE_AUTO,
+    };
+
+    if (vmaCreateImage(ctx.allocator, &imageInfo, &allocInfo,
+                       &sma.image, &sma.allocation, nullptr) != VK_SUCCESS)
+    {
+        std::println(stderr, "Failed to create shadow map array image!");
+        return sma;
+    }
+
+    const VkImageViewCreateInfo arrayViewInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = sma.image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY,
+        .format = sma.format,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = layers,
+        },
+    };
+    vkCreateImageView(ctx.device, &arrayViewInfo, nullptr, &sma.arrayImageView);
+
+    sma.layerImageViews.resize(layers, VK_NULL_HANDLE);
+    for (uint32_t i = 0; i < layers; ++i)
+    {
+        const VkImageViewCreateInfo layerViewInfo
+        {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .image = sma.image,
+            .viewType = VK_IMAGE_VIEW_TYPE_2D,
+            .format = sma.format,
+            .subresourceRange = {
+                .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = i,
+                .layerCount = 1,
+            },
+        };
+        vkCreateImageView(ctx.device, &layerViewInfo, nullptr, &sma.layerImageViews[i]);
+    }
+
+    const VkSamplerCreateInfo samplerInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = VK_FILTER_LINEAR,
+        .minFilter = VK_FILTER_LINEAR,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+        .mipLodBias = 0.0f,
+        .anisotropyEnable = VK_FALSE,
+        .maxAnisotropy = 1.0f,
+        .compareEnable = VK_TRUE,
+        .compareOp = VK_COMPARE_OP_LESS,
+        .minLod = 0.0f,
+        .maxLod = 1.0f,
+        .borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE,
+        .unnormalizedCoordinates = VK_FALSE,
+    };
+    vkCreateSampler(ctx.device, &samplerInfo, nullptr, &sma.sampler);
+
+    return sma;
+}
+
+void ShadowMapArray::transition_to_depth_attachment(VkCommandBuffer cmd)
+{
+    const bool fromShaderRead = (currentLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    const VkPipelineStageFlags srcStage = fromShaderRead
+        ? VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+        : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+
+    const VkAccessFlags srcAccess = fromShaderRead
+        ? VK_ACCESS_SHADER_READ_BIT
+        : 0;
+
+    const VkImageMemoryBarrier barrier
+    {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = srcAccess,
+        .dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+        .oldLayout = currentLayout,
+        .newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = layerCount,
+        },
+    };
+
+    vkCmdPipelineBarrier(
+        cmd,
+        srcStage,
+        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier
+    );
+
+    currentLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+}
+
+void ShadowMapArray::transition_to_shader_read(VkCommandBuffer cmd)
+{
+    const VkImageMemoryBarrier barrier
+    {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+        .oldLayout = currentLayout,
+        .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = layerCount,
+        },
+    };
+
+    vkCmdPipelineBarrier(
+        cmd,
+        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier
+    );
+
+    currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+}
+
+void ShadowMapArray::destroy()
+{
+    auto& ctx = graphics::internal::context;
+    if (sampler != VK_NULL_HANDLE)
+    {
+        vkDestroySampler(ctx.device, sampler, nullptr);
+        sampler = VK_NULL_HANDLE;
+    }
+    for (VkImageView view : layerImageViews)
+    {
+        if (view != VK_NULL_HANDLE)
+        {
+            vkDestroyImageView(ctx.device, view, nullptr);
+        }
+    }
+    layerImageViews.clear();
+    if (arrayImageView != VK_NULL_HANDLE)
+    {
+        vkDestroyImageView(ctx.device, arrayImageView, nullptr);
+        arrayImageView = VK_NULL_HANDLE;
+    }
+    if (image != VK_NULL_HANDLE)
+    {
+        vmaDestroyImage(ctx.allocator, image, allocation);
+        image = VK_NULL_HANDLE;
+        allocation = VK_NULL_HANDLE;
+    }
+}
 
 } // namespace graphics::core

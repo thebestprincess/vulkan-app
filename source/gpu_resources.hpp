@@ -241,4 +241,80 @@ private:
     void destroy();
 };
 
+class ShadowMap final
+{
+public:
+    VkImage image { VK_NULL_HANDLE };
+    VmaAllocation allocation { VK_NULL_HANDLE };
+    VkImageView imageView { VK_NULL_HANDLE };
+    VkSampler sampler { VK_NULL_HANDLE };
+    VkExtent2D extent { 0, 0 };
+    VkFormat format { VK_FORMAT_UNDEFINED };
+    VkImageLayout currentLayout { VK_IMAGE_LAYOUT_UNDEFINED };
+
+    ShadowMap() = default;
+    ~ShadowMap();
+
+    ShadowMap(const ShadowMap&) = delete;
+    ShadowMap& operator=(const ShadowMap&) = delete;
+    ShadowMap(ShadowMap&& other) noexcept;
+    ShadowMap& operator=(ShadowMap&& other) noexcept;
+
+    static ShadowMap create(uint32_t width, uint32_t height);
+
+    void transition_to_depth_attachment(VkCommandBuffer cmd);
+    void transition_to_shader_read(VkCommandBuffer cmd);
+
+    VkDescriptorImageInfo descriptor_info() const noexcept
+    {
+        return {
+            .sampler = sampler,
+            .imageView = imageView,
+            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        };
+    }
+
+private:
+    void destroy();
+};
+
+class ShadowMapArray final
+{
+public:
+    VkImage image { VK_NULL_HANDLE };
+    VmaAllocation allocation { VK_NULL_HANDLE };
+    VkImageView arrayImageView { VK_NULL_HANDLE };
+    std::vector<VkImageView> layerImageViews;
+    VkSampler sampler { VK_NULL_HANDLE };
+    VkExtent2D extent { 0, 0 };
+    VkFormat format { VK_FORMAT_UNDEFINED };
+    uint32_t layerCount { 0 };
+    VkImageLayout currentLayout { VK_IMAGE_LAYOUT_UNDEFINED };
+
+    ShadowMapArray() = default;
+    ~ShadowMapArray();
+
+    ShadowMapArray(const ShadowMapArray&) = delete;
+    ShadowMapArray& operator=(const ShadowMapArray&) = delete;
+    ShadowMapArray(ShadowMapArray&& other) noexcept;
+    ShadowMapArray& operator=(ShadowMapArray&& other) noexcept;
+
+    static ShadowMapArray create(uint32_t width, uint32_t height, uint32_t layers);
+
+    void transition_to_depth_attachment(VkCommandBuffer cmd);
+    void transition_to_shader_read(VkCommandBuffer cmd);
+
+    VkDescriptorImageInfo descriptor_info() const noexcept
+    {
+        return {
+            .sampler = sampler,
+            .imageView = arrayImageView,
+            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        };
+    }
+
+private:
+    void destroy();
+};
+
 } // namespace graphics::core

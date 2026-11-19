@@ -32,20 +32,35 @@ struct ObjectUniform final
     glm::mat4 normalMatrix;
     Material material;
 };
+
+namespace consts
+{
+    // number of objects on the scene simultaneously
+    static constexpr size_t maxObjects { 1000uz }; 
+
+    static constexpr size_t maxPointLights { 100uz };
+    static constexpr size_t maxSpotLights { 100uz };
+
+    static constexpr size_t maxSpotShadowLights { 8uz };
+} // namespace::consts 
+
     
 struct SceneUniform final
 {
     glm::mat4 view;
     glm::mat4 proj;
+    glm::mat4 dirLightSpaceMatrix;
+    std::array<glm::mat4, consts::maxSpotShadowLights> spotLightSpaceMatrices;
     glm::vec4 cameraPosition;
     glm::vec4 ambientLight;
 
     glm::vec4 dirLightDir;
     glm::vec4 dirLightColor;
-    
+
     uint32_t pointLightCount;
     uint32_t spotLightCount;
-    glm::vec2 padding;
+    uint32_t spotShadowCount;
+    uint32_t padding;
 };
     
 struct PointLight final
@@ -75,15 +90,24 @@ struct PushConstants final
     uint32_t enableComplexSampling;
 };
 
-namespace consts
+struct ShadowPushConstants final
 {
-    // number of objects on the scene simultaneously
-    static constexpr size_t maxObjects { 1000uz }; 
+    glm::mat4 lightViewProj;
+};
 
-    static constexpr size_t maxPointLights { 100uz };
-    static constexpr size_t maxSpotLights { 100uz };
-
-} // namespace::consts 
+struct ShadowSettings final
+{
+    glm::mat4 dirLightSpaceMatrix { 1.0f };
+    std::array<glm::mat4, consts::maxSpotShadowLights> spotLightSpaceMatrices{};
+    float orthoSize { 10.0f };
+    float nearPlane { 0.1f };
+    float farPlane { 30.0f };
+    float lightDistance { 12.0f };
+    float depthBiasConstant { 1.25f };
+    float depthBiasSlope { 1.75f };
+    bool enableDirShadow { true };
+    bool enableSpotShadows { true };
+};
 
 
 namespace core
@@ -109,6 +133,7 @@ struct RenderObjectData final
 struct FrameRenderData final
 {
     SceneUniform sceneUniform;
+    ShadowSettings shadowSettings;
     std::span<const PointLight> pointLights;
     std::span<const SpotLight> spotLights;
     std::span<const RenderObjectData> litObjects;
@@ -262,6 +287,8 @@ struct AppState
 
     bool show_point_lights { true }; 
     bool show_spot_lights { true };
+
+    ShadowSettings shadowSettings{};
 };
 
 } // namespace graphics::app

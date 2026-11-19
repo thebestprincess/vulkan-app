@@ -17,6 +17,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <algorithm>
 
 namespace graphics::app
 {
@@ -40,21 +41,42 @@ auto make_plane(
     glm::vec3 position,
     glm::vec3 rotation,
     glm::vec3 scale,
-    graphics::Material  material
+    graphics::Material material,
+    size_t materialIndex = 0
 ) -> graphics::app::AppObject
 {
     return graphics::app::AppObject{
-        .name      = std::move(name),
-        .mesh      = mesh,
-        .transform = { .position = position, .rotation = rotation, .scale = scale },
-        .material  = material,
+        .name          = std::move(name),
+        .mesh          = mesh,
+        .transform     = { .position = position, .rotation = rotation, .scale = scale },
+        .material      = material,
+        .materialIndex = materialIndex,
+    };
+}
+
+auto make_box(
+    std::string name,
+    const graphics::core::Mesh* mesh,
+    glm::vec3 position,
+    glm::vec3 rotation,
+    glm::vec3 scale,
+    graphics::Material material,
+    size_t materialIndex = 0
+) -> graphics::app::AppObject
+{
+    return graphics::app::AppObject{
+        .name          = std::move(name),
+        .mesh          = mesh,
+        .transform     = { .position = position, .rotation = rotation, .scale = scale },
+        .material      = material,
+        .materialIndex = materialIndex,
     };
 }
 
 } // namespace
 
 
-namespace graphics::app 
+namespace graphics::app
 {
 std::unique_ptr<core::VulkanEngine> g_engine;
 AppState g_state;
@@ -66,230 +88,331 @@ bool initialize()
     g_engine->init();
 
     const auto* plane = &g_engine->planeMesh;
-    const auto* cube = &g_engine->cubeMesh;
+    const auto* cube  = &g_engine->cubeMesh;
 
-    g_state.ambientLight = glm::vec4(0.1f, 0.1f, 0.1f, 1.0f);
-    g_state.dirLightDir = glm::vec4(0.0f, -1.0f, -1.0f, 0.0f);
-    g_state.dirLightColor = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
-
-    g_state.camera.position = { 3.8f,  2.4f,  3.8f };
-    g_state.camera.yaw = -135.0f;
-    g_state.camera.pitch = -12.0f;
-    g_state.camera.fovy = glm::radians(70.0f);
-
-    g_state.litObjects.push_back(make_plane(
-        "Floor", plane,
-        { 0.0f, 0.0f,  0.0f },
-        { 0.0f, 0.0f,  0.0f },
-        { 10.0f, 1.0f, 10.0f },
-        make_material({ 0.20f, 0.13f, 0.08f, 1.0f },
-                      { 0.55f, 0.45f, 0.35f, 1.0f },
-                      96.0f)
-    ));
-
-    g_state.litObjects.push_back(make_plane(
-        "Back Wall", plane,
-        { 0.0f, 2.5f, -5.0f },
-        { 90.0f, 0.0f, 0.0f },
-        { 10.0f, 1.0f, 5.0f },
-        make_material({ 0.32f, 0.28f, 0.26f, 1.0f },
-                      { 0.10f, 0.10f, 0.10f, 1.0f },
-                      8.0f)
-    ));
-
-    g_state.litObjects.push_back(make_plane(
-        "Left Wall", plane,
-        { -5.0f, 2.5f, 0.0f },
-        { 0.0f, 0.0f, -90.0f },
-        { 5.0f, 1.0f, 10.0f },
-        make_material({ 0.42f, 0.34f, 0.28f, 1.0f },
-                      { 0.10f, 0.10f, 0.10f, 1.0f },
-                      8.0f)
-    ));
-
-    g_state.litObjects.push_back(make_plane(
-        "Right Wall", plane,
-        { 5.0f, 2.5f, 0.0f },
-        { 0.0f, 0.0f, 90.0f },
-        { 5.0f, 1.0f, 10.0f },
-        make_material({ 0.28f, 0.30f, 0.34f, 1.0f },
-                      { 0.10f, 0.10f, 0.10f, 1.0f },
-                      8.0f)
-    ));
-
-    
-
-
-    g_state.litObjects.push_back({
-        .name = "Hero Cube",
-        .mesh = cube,
-        .transform = {
-            .position = { -2.6f, 0.75f, -2.6f },
-            .rotation = { 0.0f, 35.0f, 0.0f },
-            .scale    = { 1.5f, 1.5f, 1.5f }
-        },
-        .material = make_material(
-            { 0.85f, 0.62f, 0.30f, 1.0f },
-            { 1.00f, 0.95f, 0.80f, 1.0f },
-            128.0f)
-    });
-
-    g_state.litObjects.push_back({
-        .name = "Spinner",
-        .mesh = cube,
-        .transform = {
-            .position = { -1.0f, 0.35f, -1.0f },
-            .rotation = { 0.0f, 0.0f, 0.0f },
-            .scale    = { 0.7f, 0.7f, 0.7f }
-        },
-        .material = make_material(
-            { 0.75f, 0.18f, 0.15f, 1.0f },
-            { 1.00f, 0.90f, 0.90f, 1.0f },
-            96.0f),
-        .isAnimating = true,
-        .animSpeed   = 0.8f,
-        .animRadius  = 1.3f,
-    });
-
-    g_state.litObjects.push_back({
-        .name = "Blue Cube",
-        .mesh = cube,
-        .transform = {
-            .position = { 2.8f, 0.5f, -1.8f },
-            .rotation = { 0.0f, 20.0f, 0.0f },
-            .scale    = { 1.0f, 1.0f, 1.0f }
-        },
-        .material = make_material(
-            { 0.18f, 0.32f, 0.65f, 1.0f },
-            { 0.85f, 0.90f, 1.00f, 1.0f },
-            96.0f)
-    });
-
-    g_state.litObjects.push_back(make_plane(
-        "Painting", plane,
-        { -2.5f, 2.6f, -4.97f },
-        { 90.0f, 0.0f, 0.0f },
-        { 2.2f, 1.0f, 1.6f },
-        make_material({ 0.55f, 0.42f, 0.30f, 1.0f },
-                      { 0.05f, 0.05f, 0.05f, 1.0f },
-                      4.0f)
-    ));
-
-    
-
-    g_state.ambientLight = { 0.03f, 0.03f, 0.05f, 1.0f };
-
-    g_state.dirLightDir   = { 0.4f, -1.0f, 0.5f, 0.0f };
-    g_state.dirLightColor = { 0.06f, 0.09f, 0.16f, 1.0f };
-
-    
-
-    g_state.spotLights.push_back({
-        .position    = { -2.6f, 4.7f, -2.6f, 1.0f },
-        .direction   = { 0.0f, -1.0f, 0.0f, 0.0f },
-        .color       = { 1.00f, 0.80f, 0.45f, 1.5f },
-        .innerCutoff = glm::cos(glm::radians(20.0f)),
-        .outerCutoff = glm::cos(glm::radians(30.0f)),
-        .linear      = 0.07f,
-        .quadratic   = 0.017f
-    });
-
-    g_state.spotLights.push_back({
-        .position    = { 0.5f, 3.5f, 0.5f, 1.0f },
-        .direction   = glm::normalize(glm::vec4(-3.1f, -2.5f, -3.1f, 0.0f)),
-        .color       = { 0.35f, 0.55f, 1.00f, 1.3f },
-        .innerCutoff = glm::cos(glm::radians(15.0f)),
-        .outerCutoff = glm::cos(glm::radians(25.0f)),
-        .linear      = 0.09f,
-        .quadratic   = 0.03f
-    });
-
-    g_state.spotLights.push_back({
-        .position    = { -2.5f, 4.5f, -1.5f, 1.0f },
-        .direction   = glm::normalize(glm::vec4(0.0f, -2.0f, -3.5f, 0.0f)),
-        .color       = { 1.00f, 0.92f, 0.75f, 1.0f },
-        .innerCutoff = glm::cos(glm::radians(22.0f)),
-        .outerCutoff = glm::cos(glm::radians(32.0f)),
-        .linear      = 0.05f,
-        .quadratic   = 0.012f
-    });
-
-    g_state.spotLights.push_back({
-        .position    = { 2.8f, 3.8f, 0.0f, 1.0f },
-        .direction   = glm::normalize(glm::vec4(0.0f, -1.0f, -0.6f, 0.0f)),
-        .color       = { 0.30f, 0.55f, 1.00f, 1.1f },
-        .innerCutoff = glm::cos(glm::radians(18.0f)),
-        .outerCutoff = glm::cos(glm::radians(28.0f)),
-        .linear      = 0.09f,
-        .quadratic   = 0.028f
-    });
-
-    g_state.pointLights.push_back({
-        .position  = { 3.8f, 0.4f, 3.8f, 1.0f },
-        .color     = { 1.00f, 0.42f, 0.12f, 1.1f },
-        .linear    = 0.14f,
-        .quadratic = 0.07f
-    });
-
-    g_state.pointLights.push_back({
-        .position  = { -3.8f, 0.4f, 3.8f, 1.0f },
-        .color     = { 0.15f, 0.42f, 1.00f, 1.0f },
-        .linear    = 0.14f,
-        .quadratic = 0.07f
-    });
-
-    g_state.pointLights.push_back({
-        .position  = { 1.5f, 0.35f, -4.2f, 1.0f },
-        .color     = { 0.85f, 0.20f, 0.55f, 1.0f },
-        .linear    = 0.12f,
-        .quadratic = 0.05f
-    });
-
-    g_state.pointLights.push_back({
-        .position  = { -0.6f, 0.12f, -3.6f, 1.0f },
-        .color     = { 1.00f, 0.70f, 0.35f, 0.9f },
-        .linear    = 0.35f,
-        .quadratic = 0.44f
-    });
-
-    g_engine->load_material("Default", "", "", "");
-    
-    g_engine->load_material(
+    const size_t matDefault = g_engine->load_material("Default", "", "", "");
+    const size_t matMetal = g_engine->load_material(
         "Metal",
         std::filesystem::current_path() / "textures" / "metal.jpg",
         std::filesystem::current_path() / "textures" / "metal_specular.png",
         std::filesystem::current_path() / "textures" / "metal_emissive.png"
     );
-
-    g_engine->load_material(
+    const size_t matRustMetal = g_engine->load_material(
         "Rust Metal",
         std::filesystem::current_path() / "textures" / "rust_metal.png",
         std::filesystem::current_path() / "textures" / "rust_metal_specular.png",
         ""
     );
-
-    g_engine->load_material(
+    const size_t matLava = g_engine->load_material(
         "Lava",
         std::filesystem::current_path() / "textures" / "lava.png",
         std::filesystem::current_path() / "textures" / "lava_specular.png",
         std::filesystem::current_path() / "textures" / "lava_emissive.png"
     );
-
-    g_engine->load_material(
+    const size_t matWood  = g_engine->load_material(
         "Wood",
         std::filesystem::current_path() / "textures" / "wood.jpg",
         "",
-        std::filesystem::current_path() / "textures" / "wood_emissive.jpg"
+        ""
+        // std::filesystem::current_path() / "textures" / "wood_emissive.jpg"
     );
-
-    g_engine->load_material(
+    const size_t matAhegao = g_engine->load_material(
         "Ahegao",
         std::filesystem::current_path() / "textures" / "ahegao.jpg",
         "",
         std::filesystem::current_path() / "textures" / "ahegao_emissive.png"
     );
 
-    g_state.litObjects[4].materialIndex = 1;
+    g_state.camera.position = { 4.8f, 3.3f, 6.2f };
+    g_state.camera.yaw      = -126.0f;
+    g_state.camera.pitch    = -17.0f;
+    g_state.camera.fovy     = glm::radians(65.0f);
+
+    g_state.shadowSettings.orthoSize         = 12.0f;
+    g_state.shadowSettings.lightDistance     = 14.0f;
+    g_state.shadowSettings.nearPlane         = 0.1f;
+    g_state.shadowSettings.farPlane          = 35.0f;
+    g_state.shadowSettings.depthBiasConstant = 1.25f;
+    g_state.shadowSettings.depthBiasSlope    = 1.75f;
+
+    g_state.litObjects.push_back(make_plane(
+        "Gallery Floor", plane,
+        { 0.0f, 0.0f, 0.0f },
+        { 0.0f, 0.0f, 0.0f },
+        { 12.0f, 1.0f, 12.0f },
+        make_material({ 0.06f, 0.05f, 0.05f, 1.0f }, { 0.65f, 0.55f, 0.45f, 1.0f }, 96.0f),
+        matDefault
+    ));
+
+    g_state.litObjects.push_back(make_plane(
+        "Back Wall", plane,
+        { 0.0f, 3.0f, -6.0f },
+        { 90.0f, 0.0f, 0.0f },
+        { 12.0f, 1.0f, 6.0f },
+        make_material({ 0.35f, 0.33f, 0.32f, 1.0f }, { 0.12f, 0.12f, 0.12f, 1.0f }, 12.0f),
+        matDefault
+    ));
+
+    g_state.litObjects.push_back(make_plane(
+        "Left Wall", plane,
+        { -6.0f, 3.0f, 0.0f },
+        { 0.0f, 0.0f, -90.0f },
+        { 6.0f, 1.0f, 12.0f },
+        make_material({ 0.38f, 0.34f, 0.32f, 1.0f }, { 0.12f, 0.12f, 0.12f, 1.0f }, 12.0f),
+        matDefault
+    ));
+
+    g_state.litObjects.push_back(make_plane(
+        "Right Wall", plane,
+        { 6.0f, 3.0f, 0.0f },
+        { 0.0f, 0.0f, 90.0f },
+        { 6.0f, 1.0f, 12.0f },
+        make_material({ 0.30f, 0.32f, 0.36f, 1.0f }, { 0.12f, 0.12f, 0.12f, 1.0f }, 12.0f),
+        matDefault
+    ));
+
+    g_state.litObjects.push_back(make_box(
+        "Left Pillar", cube,
+        { -5.2f, 3.0f, -5.2f },
+        { 0.0f, 0.0f, 0.0f },
+        { 0.8f, 6.0f, 0.8f },
+        make_material({ 0.55f, 0.52f, 0.48f, 1.0f }, { 0.30f, 0.30f, 0.30f, 1.0f }, 32.0f),
+        matRustMetal
+    ));
+
+    g_state.litObjects.push_back(make_box(
+        "Right Pillar", cube,
+        { 5.2f, 3.0f, -5.2f },
+        { 0.0f, 0.0f, 0.0f },
+        { 0.8f, 6.0f, 0.8f },
+        make_material({ 0.55f, 0.52f, 0.48f, 1.0f }, { 0.30f, 0.30f, 0.30f, 1.0f }, 32.0f),
+        matRustMetal
+    ));
+
+    g_state.litObjects.push_back(make_box(
+        "Center Pedestal", cube,
+        { 0.0f, 0.5f, 0.0f },
+        { 0.0f, 0.0f, 0.0f },
+        { 1.7f, 1.0f, 1.7f },
+        make_material({ 0.65f, 0.62f, 0.58f, 1.0f }, { 0.45f, 0.45f, 0.45f, 1.0f }, 48.0f),
+        matRustMetal
+    ));
+
+    g_state.litObjects.push_back(make_box(
+        "Centerpiece Cube", cube,
+        { 0.0f, 1.65f, 0.0f },
+        { 0.0f, 35.0f, 0.0f },
+        { 1.3f, 1.3f, 1.3f },
+        make_material({ 0.92f, 0.86f, 0.78f, 1.0f }, { 1.00f, 0.96f, 0.88f, 1.0f }, 128.0f),
+        matMetal
+    ));
+
+    g_state.litObjects.push_back({
+        .name = "Orbiting Cube",
+        .mesh = cube,
+        .transform = {
+            .position = { 2.0f, 2.2f, 0.0f },
+            .rotation = { 15.0f, 0.0f, 25.0f },
+            .scale    = { 0.55f, 0.55f, 0.55f }
+        },
+        .material = make_material(
+            { 0.85f, 0.28f, 0.22f, 1.0f },
+            { 1.00f, 0.85f, 0.80f, 1.0f },
+            96.0f
+        ),
+        .materialIndex = matDefault,
+        .isAnimating   = true,
+        .animSpeed     = 0.75f,
+        .animRadius    = 2.1f,
+    });
+
+    g_state.litObjects.push_back(make_box(
+        "Left Pedestal", cube,
+        { -3.6f, 0.45f, -1.6f },
+        { 0.0f, 15.0f, 0.0f },
+        { 1.2f, 0.9f, 1.2f },
+        make_material({ 0.45f, 0.42f, 0.40f, 1.0f }, { 0.30f, 0.30f, 0.30f, 1.0f }, 32.0f),
+        matRustMetal
+    ));
+
+    g_state.litObjects.push_back(make_box(
+        "Lava Artifact", cube,
+        { -3.6f, 1.35f, -1.6f },
+        { 15.0f, 40.0f, 10.0f },
+        { 0.85f, 0.85f, 0.85f },
+        make_material({ 0.95f, 0.55f, 0.35f, 1.0f }, { 0.80f, 0.50f, 0.30f, 1.0f }, 64.0f),
+        matLava
+    ));
+
+    g_state.litObjects.push_back(make_box(
+        "Right Pedestal", cube,
+        { 3.6f, 0.45f, -1.6f },
+        { 0.0f, -15.0f, 0.0f },
+        { 1.2f, 0.9f, 1.2f },
+        make_material({ 0.45f, 0.42f, 0.40f, 1.0f }, { 0.30f, 0.30f, 0.30f, 1.0f }, 32.0f),
+        matRustMetal
+    ));
+
+    g_state.litObjects.push_back(make_box(
+        "Azure Sculpture", cube,
+        { 3.6f, 1.40f, -1.6f },
+        { 25.0f, -30.0f, 35.0f },
+        { 0.90f, 0.90f, 0.90f },
+        make_material({ 0.25f, 0.55f, 0.95f, 1.0f }, { 0.90f, 0.95f, 1.00f, 1.0f }, 128.0f),
+        matMetal
+    ));
+
+    g_state.litObjects.push_back(make_box(
+        "Frame Left", cube,
+        { -2.4f, 2.9f, -5.96f },
+        { 0.0f, 0.0f, 0.0f },
+        { 2.35f, 1.75f, 0.06f },
+        make_material({ 0.20f, 0.14f, 0.10f, 1.0f }, { 0.40f, 0.30f, 0.20f, 1.0f }, 32.0f),
+        matWood
+    ));
+    g_state.litObjects.push_back(make_plane(
+        "Painting Left", plane,
+        { -2.4f, 2.9f, -5.91f },
+        { 90.0f, 0.0f, 0.0f },
+        { 2.1f, 1.0f, 1.5f },
+        make_material({ 0.95f, 0.95f, 0.95f, 1.0f }, { 0.10f, 0.10f, 0.10f, 1.0f }, 8.0f),
+        matAhegao
+    ));
+
+    g_state.litObjects.push_back(make_box(
+        "Frame Right", cube,
+        { 2.4f, 2.9f, -5.96f },
+        { 0.0f, 0.0f, 0.0f },
+        { 2.35f, 1.75f, 0.06f },
+        make_material({ 0.20f, 0.14f, 0.10f, 1.0f }, { 0.40f, 0.30f, 0.20f, 1.0f }, 32.0f),
+        matWood
+    ));
+    g_state.litObjects.push_back(make_plane(
+        "Painting Right", plane,
+        { 2.4f, 2.9f, -5.91f },
+        { 90.0f, 0.0f, 0.0f },
+        { 2.1f, 1.0f, 1.5f },
+        make_material({ 0.95f, 0.85f, 0.80f, 1.0f }, { 0.20f, 0.20f, 0.20f, 1.0f }, 16.0f),
+        matLava
+    ));
+
+    g_state.litObjects.push_back(make_box(
+        "Frame Side", cube,
+        { -5.96f, 2.9f, 0.8f },
+        { 0.0f, 0.0f, 0.0f },
+        { 0.06f, 1.95f, 2.55f },
+        make_material({ 0.20f, 0.14f, 0.10f, 1.0f }, { 0.40f, 0.30f, 0.20f, 1.0f }, 32.0f),
+        matWood
+    ));
+    g_state.litObjects.push_back(make_plane(
+        "Painting Side", plane,
+        { -5.91f, 2.9f, 0.8f },
+        { 0.0f, 0.0f, -90.0f },
+        { 1.7f, 1.0f, 2.3f },
+        make_material({ 0.90f, 0.92f, 0.98f, 1.0f }, { 0.40f, 0.40f, 0.40f, 1.0f }, 32.0f),
+        matMetal
+    ));
+
+    g_state.ambientLight  = { 0.04f, 0.04f, 0.06f, 1.0f };
+    g_state.dirLightDir   = { -0.25f, -0.85f, -0.55f, 0.0f };
+    g_state.dirLightColor = { 0.95f, 0.90f, 0.82f, 0.38f };
+
+    const glm::vec3 centerTarget { 0.0f, 1.55f, 0.0f };
+
+    {
+        const glm::vec3 pos { -3.6f, 3.5f, 3.4f };
+        g_state.spotLights.push_back({
+            .position    = glm::vec4(pos, 1.0f),
+            .direction   = glm::vec4(glm::normalize(centerTarget - pos), 0.0f),
+            .color       = { 1.00f, 0.78f, 0.42f, 1.6f },
+            .innerCutoff = glm::cos(glm::radians(16.0f)),
+            .outerCutoff = glm::cos(glm::radians(26.0f)),
+            .linear      = 0.06f,
+            .quadratic   = 0.015f
+        });
+    }
+
+    {
+        const glm::vec3 pos { 3.6f, 3.3f, 3.4f };
+        g_state.spotLights.push_back({
+            .position    = glm::vec4(pos, 1.0f),
+            .direction   = glm::vec4(glm::normalize(centerTarget - pos), 0.0f),
+            .color       = { 0.30f, 0.65f, 1.00f, 1.5f },
+            .innerCutoff = glm::cos(glm::radians(16.0f)),
+            .outerCutoff = glm::cos(glm::radians(26.0f)),
+            .linear      = 0.06f,
+            .quadratic   = 0.015f
+        });
+    }
+
+    {
+        const glm::vec3 pos { -4.2f, 2.9f, -3.2f };
+        g_state.spotLights.push_back({
+            .position    = glm::vec4(pos, 1.0f),
+            .direction   = glm::vec4(glm::normalize(centerTarget - pos), 0.0f),
+            .color       = { 0.85f, 0.30f, 0.90f, 1.3f },
+            .innerCutoff = glm::cos(glm::radians(15.0f)),
+            .outerCutoff = glm::cos(glm::radians(25.0f)),
+            .linear      = 0.07f,
+            .quadratic   = 0.018f
+        });
+    }
+
+    {
+        const glm::vec3 pos { 0.0f, 4.4f, -1.8f };
+        const glm::vec3 target { 0.0f, 2.7f, -5.9f };
+        g_state.spotLights.push_back({
+            .position    = glm::vec4(pos, 1.0f),
+            .direction   = glm::vec4(glm::normalize(target - pos), 0.0f),
+            .color       = { 1.00f, 0.92f, 0.80f, 1.2f },
+            .innerCutoff = glm::cos(glm::radians(28.0f)),
+            .outerCutoff = glm::cos(glm::radians(40.0f)),
+            .linear      = 0.05f,
+            .quadratic   = 0.012f
+        });
+    }
+
+    g_state.pointLights.push_back({
+        .position  = { -3.6f, 2.2f, -1.6f, 1.0f },
+        .color     = { 1.00f, 0.42f, 0.12f, 1.1f },
+        .linear    = 0.22f,
+        .quadratic = 0.20f
+    });
+
+    g_state.pointLights.push_back({
+        .position  = { 3.6f, 2.2f, -1.6f, 1.0f },
+        .color     = { 0.20f, 0.58f, 1.00f, 1.0f },
+        .linear    = 0.22f,
+        .quadratic = 0.20f
+    });
+
+    g_state.pointLights.push_back({
+        .position  = { -4.4f, 3.6f, -4.8f, 1.0f },
+        .color     = { 1.00f, 0.78f, 0.45f, 0.9f },
+        .linear    = 0.20f,
+        .quadratic = 0.16f
+    });
+
+    g_state.pointLights.push_back({
+        .position  = { 4.4f, 3.6f, -4.8f, 1.0f },
+        .color     = { 1.00f, 0.78f, 0.45f, 0.9f },
+        .linear    = 0.20f,
+        .quadratic = 0.16f
+    });
+
+    g_state.pointLights.push_back({
+        .position  = { -4.8f, 0.1f, 4.8f, 1.0f },
+        .color     = { 0.48f, 0.32f, 0.95f, 0.75f },
+        .linear    = 0.22f,
+        .quadratic = 0.18f
+    });
+
+    g_state.pointLights.push_back({
+        .position  = { 4.8f, 0.1f, 4.8f, 1.0f },
+        .color     = { 0.72f, 0.16f, 0.09f, 0.75f },
+        .linear    = 0.22f,
+        .quadratic = 0.18f
+    });
 
     return true;
 }
@@ -317,9 +440,10 @@ void update(double time)
         {
             obj.animTime += dt * obj.animSpeed;
             obj.transform.position.x = std::cos(obj.animTime) * obj.animRadius;
-            obj.transform.position.y = std::sin(obj.animTime) * obj.animRadius;
-            obj.transform.rotation.x += dt * 50.0f;
-            obj.transform.rotation.z += dt * 50.0f;
+            obj.transform.position.z = std::sin(obj.animTime) * obj.animRadius;
+            obj.transform.position.y = 2.2f + 0.25f * std::sin(obj.animTime * 2.0f);
+            obj.transform.rotation.x += dt * 45.0f;
+            obj.transform.rotation.y += dt * 60.0f;
         }
     }
 }
@@ -338,6 +462,68 @@ void render(const internal::FrameData& fd)
         .pointLightCount = g_state.show_point_lights ? static_cast<uint32_t>(g_state.pointLights.size()) : static_cast<uint32_t>(0),
         .spotLightCount = g_state.show_spot_lights ? static_cast<uint32_t>(g_state.spotLights.size()) : static_cast<uint32_t>(0),
     };
+
+    glm::vec3 dir = glm::vec3(g_state.dirLightDir);
+    if (glm::length(dir) < 1e-4f)
+    {
+        dir = glm::vec3(0.0f, -1.0f, 0.0f);
+    }
+    dir = glm::normalize(dir);
+
+    const glm::vec3 sunPos = -dir * g_state.shadowSettings.lightDistance;
+    const glm::vec3 sunUp = (std::abs(dir.y) > 0.99f)
+        ? glm::vec3(0.0f, 0.0f, 1.0f)
+        : glm::vec3(0.0f, 1.0f, 0.0f);
+    const glm::mat4 dirView = glm::lookAt(sunPos, glm::vec3(0.0f), sunUp);
+
+    const float orthoHalf = g_state.shadowSettings.orthoSize;
+    glm::mat4 dirProj = glm::orthoZO(
+        -orthoHalf, orthoHalf,
+        -orthoHalf, orthoHalf,
+        g_state.shadowSettings.nearPlane,
+        g_state.shadowSettings.farPlane
+    );
+    dirProj[1][1] *= -1.0f; // Y-axis for Vulkan
+    g_state.shadowSettings.dirLightSpaceMatrix = dirProj * dirView;
+
+    uint32_t spotShadowCount { 0u };
+    if (g_state.show_spot_lights && g_state.shadowSettings.enableSpotShadows)
+    {
+        spotShadowCount = static_cast<uint32_t>(
+            std::min(g_state.spotLights.size(), consts::maxSpotShadowLights)
+        );
+
+        for (uint32_t i = 0; i < spotShadowCount; ++i)
+        {
+            const auto& spot = g_state.spotLights[i];
+            const glm::vec3 spotPos = glm::vec3(spot.position);
+            glm::vec3 spotDir = glm::vec3(spot.direction);
+            if (glm::length(spotDir) < 1e-4f)
+            {
+                spotDir = glm::vec3(0.0f, -1.0f, 0.0f);
+            }
+            spotDir = glm::normalize(spotDir);
+
+            const glm::vec3 spotUp = (std::abs(spotDir.y) < 0.99f)
+                ? glm::vec3(0.0f, 1.0f, 0.0f)
+                : glm::vec3(0.0f, 0.0f, 1.0f);
+
+            const glm::mat4 spotView = glm::lookAt(spotPos, spotPos + spotDir, spotUp);
+            const float spotFov = 2.0f * std::acos(std::clamp(spot.outerCutoff, 0.01f, 0.9999f));
+            glm::mat4 spotProj = glm::perspectiveZO(
+                spotFov,
+                1.0f,
+                0.1f,
+                g_state.shadowSettings.farPlane
+            );
+            spotProj[1][1] *= -1.0f; // Y-axis for Vulkan
+            g_state.shadowSettings.spotLightSpaceMatrices[i] = spotProj * spotView;
+        }
+    }
+
+    g_renderData.sceneUniform.dirLightSpaceMatrix = g_state.shadowSettings.dirLightSpaceMatrix;
+    g_renderData.sceneUniform.spotLightSpaceMatrices = g_state.shadowSettings.spotLightSpaceMatrices;
+    g_renderData.sceneUniform.spotShadowCount = spotShadowCount;
 
     float aspect = static_cast<float>(context.swapchain_extent.width) / static_cast<float>(context.swapchain_extent.height);
     if (g_state.projectionType == 0)
@@ -454,6 +640,7 @@ void render(const internal::FrameData& fd)
     g_renderData.lineObjects = renderLineObjects;
     g_renderData.pointLights = g_state.pointLights;
     g_renderData.spotLights  = g_state.spotLights;
+    g_renderData.shadowSettings = g_state.shadowSettings;
 
     g_engine->draw(fd.command_buffer, fd.framebuffer, g_renderData);
 }

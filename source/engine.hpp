@@ -18,9 +18,16 @@ public:
     ~VulkanEngine();
 
 public:
-    VkPipeline mainPipeline;
-    VkPipeline linePipeline;
-    VkPipelineLayout pipelineLayout;
+    VkPipeline mainPipeline { VK_NULL_HANDLE };
+    VkPipeline linePipeline { VK_NULL_HANDLE };
+    VkPipelineLayout pipelineLayout { VK_NULL_HANDLE };
+
+    VkPipeline shadowPipeline { VK_NULL_HANDLE };
+    VkPipelineLayout shadowPipelineLayout { VK_NULL_HANDLE };
+
+    static constexpr uint32_t shadowMapSize { 2048u };
+    ShadowMap dirShadowMap;
+    ShadowMapArray spotShadowMaps;
 
     VkDescriptorSet desriptorSet;
     VkDescriptorSetLayout desriptorSetLayout;
