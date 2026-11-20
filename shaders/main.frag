@@ -33,10 +33,6 @@ layout(push_constant) uniform PushConstants {
 float calculate_shadow(sampler2DShadow shadowMap, mat4 lightSpaceMatrix, vec3 worldPos)
 {
     vec4 lightSpacePos = lightSpaceMatrix * vec4(worldPos, 1.0);
-    if (lightSpacePos.w <= 0.0)
-    {
-        return 1.0;
-    }
 
     vec3 projCoords = lightSpacePos.xyz / lightSpacePos.w;
     projCoords.xy = projCoords.xy * 0.5 + 0.5;

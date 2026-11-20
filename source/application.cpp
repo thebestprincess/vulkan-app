@@ -124,16 +124,16 @@ bool initialize()
     );
 
     g_state.camera.position = { 4.8f, 3.3f, 6.2f };
-    g_state.camera.yaw      = -126.0f;
-    g_state.camera.pitch    = -17.0f;
-    g_state.camera.fovy     = glm::radians(65.0f);
+    g_state.camera.yaw = -126.0f;
+    g_state.camera.pitch = -17.0f;
+    g_state.camera.fovy = glm::radians(65.0f);
 
-    g_state.shadowSettings.orthoSize         = 12.0f;
-    g_state.shadowSettings.lightDistance     = 14.0f;
-    g_state.shadowSettings.nearPlane         = 0.1f;
-    g_state.shadowSettings.farPlane          = 35.0f;
+    g_state.shadowSettings.orthoSize = 12.0f;
+    g_state.shadowSettings.lightDistance = 14.0f;
+    g_state.shadowSettings.nearPlane = 0.1f;
+    g_state.shadowSettings.farPlane = 35.0f;
     g_state.shadowSettings.depthBiasConstant = 1.25f;
-    g_state.shadowSettings.depthBiasSlope    = 1.75f;
+    g_state.shadowSettings.depthBiasSlope = 1.75f;
 
     g_state.litObjects.push_back(make_plane(
         "Gallery Floor", plane,
@@ -276,7 +276,7 @@ bool initialize()
         { 90.0f, 0.0f, 0.0f },
         { 2.1f, 1.0f, 1.5f },
         make_material({ 0.95f, 0.95f, 0.95f, 1.0f }, { 0.10f, 0.10f, 0.10f, 1.0f }, 8.0f),
-        matAhegao
+        matLava
     ));
 
     g_state.litObjects.push_back(make_box(
